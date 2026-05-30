@@ -26,9 +26,55 @@ export interface ApiTrip {
   startDate: string;
   endDate: string;
   userId: string;
+  destinationCity?: string | null;
+  destinationLat?: number | null;
+  destinationLng?: number | null;
   createAt: string;
   updateAt: string | null;
   locations?: ApiLocation[];
+  activities?: ApiActivity[];
+}
+
+export interface ApiActivity {
+  id: string;
+  tripId: string;
+  title: string;
+  description: string | null;
+  startTime: string;
+  endTime: string;
+  order: number;
+  createAt: string;
+  updateAt: string | null;
+}
+
+export interface PrayerTimings {
+  date: string;
+  timezone: string;
+  timings: {
+    Fajr: string;
+    Dhuhr: string;
+    Asr: string;
+    Maghrib: string;
+    Isha: string;
+  };
+}
+
+export interface NearbyPlace {
+  id: string;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  rating?: number;
+  openNow?: boolean;
+}
+
+export interface PrayerConflict {
+  activityId: string;
+  activityTitle: string;
+  prayerName: string;
+  prayerTime: string;
+  message: string;
 }
 
 export interface TransformedLocation {

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ApiTrip, ApiLocation } from "@/types/api";
+import type { ApiTrip, ApiLocation, ApiActivity } from "@/types/api";
 import Image from "next/image";
 import Link from "next/link";
 import { Calendar, MapPin, Plus } from "lucide-react";
@@ -9,11 +9,16 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { useState } from "react";
 import Map from "./map";
 import SortableItinerary from "./sortable-itinerary";
+import PrayerTimesPanel from "./prayer-times-panel";
+import NearbyPlacesPanel from "./nearby-places-panel";
+import ItineraryActivities from "./itinerary-activities";
+import ConflictAlerts from "./conflict-alerts";
 
 export type TripWithLocations = ApiTrip & {
   startDate: Date;
   endDate: Date;
   locations: (ApiLocation & { createAt: Date; updateAt: Date | null })[];
+  activities?: (ApiActivity & { createAt: Date; updateAt: Date | null })[];
 };
 
 interface TripDetailClientProps {
@@ -22,6 +27,8 @@ interface TripDetailClientProps {
 
 export default function TripDetailClient({ trip }: TripDetailClientProps) {
   const [activeTab, setActiveTab] = useState("overview");
+  const hasLocations = trip.locations.length > 0;
+  const defaultDate = trip.startDate.toISOString().slice(0, 10);
 
   return (
     <div className="container mx-auto px-4 py-8 space-y-8">
@@ -58,14 +65,26 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
 
       <div className="bg-white p-6 shadow rounded-lg">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="mb-6">
-            <TabsTrigger value="overview" className="text-lg font-semibold w-full">
+          <TabsList className="mb-6 flex flex-wrap h-auto gap-1">
+            <TabsTrigger value="overview" className="text-sm font-semibold">
               Overview
             </TabsTrigger>
-            <TabsTrigger value="itinerary" className="text-lg font-semibold w-full">
-              Itinerary
+            <TabsTrigger value="itinerary" className="text-sm font-semibold">
+              Locations
             </TabsTrigger>
-            <TabsTrigger value="map" className="text-lg font-semibold w-full">
+            <TabsTrigger value="activities" className="text-sm font-semibold">
+              Activities
+            </TabsTrigger>
+            <TabsTrigger value="prayer" className="text-sm font-semibold">
+              Prayer Times
+            </TabsTrigger>
+            <TabsTrigger value="nearby" className="text-sm font-semibold">
+              Nearby
+            </TabsTrigger>
+            <TabsTrigger value="conflicts" className="text-sm font-semibold">
+              Conflicts
+            </TabsTrigger>
+            <TabsTrigger value="map" className="text-sm font-semibold">
               Map
             </TabsTrigger>
           </TabsList>
@@ -91,6 +110,9 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                     Destinations: {trip.locations.length} location{trip.locations.length !== 1 ? "s" : ""}
                   </p>
                 </div>
+                <p className="text-sm text-emerald-700 mt-4">
+                  Muslim-friendly features: prayer times, nearby mosques & Halal food, and schedule conflict alerts.
+                </p>
               </div>
               <p className="text-gray-500 mt-4 leading-relaxed">{trip.description}</p>
             </div>
@@ -136,6 +158,18 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                 </>
               )}
             </div>
+          </TabsContent>
+          <TabsContent value="activities">
+            <ItineraryActivities tripId={trip.id} />
+          </TabsContent>
+          <TabsContent value="prayer">
+            <PrayerTimesPanel tripId={trip.id} defaultDate={defaultDate} hasLocations={hasLocations} />
+          </TabsContent>
+          <TabsContent value="nearby">
+            <NearbyPlacesPanel tripId={trip.id} hasLocations={hasLocations} />
+          </TabsContent>
+          <TabsContent value="conflicts">
+            <ConflictAlerts tripId={trip.id} defaultDate={defaultDate} hasLocations={hasLocations} />
           </TabsContent>
           <TabsContent value="map">
             <div className="h-72 rounded-lg overflow-hidden">

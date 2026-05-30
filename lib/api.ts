@@ -1,4 +1,13 @@
-import type { ApiTrip, ApiLocation, TransformedLocation, ApiUser } from "@/types/api";
+import type {
+  ApiTrip,
+  ApiLocation,
+  ApiActivity,
+  TransformedLocation,
+  ApiUser,
+  PrayerTimings,
+  NearbyPlace,
+  PrayerConflict,
+} from "@/types/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const JWT_COOKIE = "jwt";
@@ -33,7 +42,8 @@ export async function fetchApi<T>(
 export const api = {
   getMe: () => fetchApi<ApiUser>("/api/auth/me"),
   getTrips: () => fetchApi<ApiTrip[]>("/api/trips"),
-  getTrip: (id: string) => fetchApi<ApiTrip & { locations: ApiLocation[] }>(`/api/trips/${id}`),
+  getTrip: (id: string) =>
+    fetchApi<ApiTrip & { locations: ApiLocation[]; activities: ApiActivity[] }>(`/api/trips/${id}`),
   createTrip: (body: {
     title: string;
     description: string;
@@ -60,6 +70,27 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ tripId, locationIds }),
     }),
+  getPrayerTimes: (tripId: string, date: string) =>
+    fetchApi<PrayerTimings>(`/api/trips/${tripId}/prayer-times?date=${encodeURIComponent(date)}`),
+  getNearbyMosques: (tripId: string, radius = 5000) =>
+    fetchApi<NearbyPlace[]>(`/api/trips/${tripId}/nearby/mosques?radius=${radius}`),
+  getNearbyHalal: (tripId: string, radius = 5000) =>
+    fetchApi<NearbyPlace[]>(`/api/trips/${tripId}/nearby/halal?radius=${radius}`),
+  getActivities: (tripId: string) => fetchApi<ApiActivity[]>(`/api/trips/${tripId}/activities`),
+  createActivity: (
+    tripId: string,
+    body: { title: string; description?: string; startTime: string; endTime: string }
+  ) =>
+    fetchApi<ApiActivity>(`/api/trips/${tripId}/activities`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  deleteActivity: (tripId: string, activityId: string) =>
+    fetchApi<{ success: boolean }>(`/api/trips/${tripId}/activities/${activityId}`, {
+      method: "DELETE",
+    }),
+  getConflicts: (tripId: string, date: string) =>
+    fetchApi<PrayerConflict[]>(`/api/trips/${tripId}/conflicts?date=${encodeURIComponent(date)}`),
 };
 
 export { JWT_COOKIE, getToken };
