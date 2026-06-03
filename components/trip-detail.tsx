@@ -53,19 +53,19 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
           />
         </div>
       )}
-      <div className='bg-white p-6 shadow rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center'>
-        <div>
+      <div className='bg-white p-6 shadow rounded-lg flex flex-col gap-4 md:flex-row md:justify-between md:items-center'>
+        <div className='text-center md:text-left'>
           <h1 className='text-3xl font-extrabold text-gray-800 mb-2'>
             {trip.title}
           </h1>
-          <div className='flex items-center text-gray-600 mb-6'>
-            <Calendar className='w-6 h-6 mr-2' />
+          <div className='flex flex-col items-center gap-2 text-gray-600 md:flex-row md:items-center'>
+            <Calendar className='w-6 h-6 text-gray-500' />
             <span className='text-lg'>
               {formatDate(trip.startDate)} - {formatDate(trip.endDate)}
             </span>
           </div>
         </div>
-        <div>
+        <div className='flex justify-center md:justify-end'>
           <Link
             href={`/trips/${trip.id}/itinerary/new`}
             className='text-blue-600 hover:underline'
@@ -80,26 +80,47 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
 
       <div className='bg-white p-6 shadow rounded-lg'>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className='mb-6 flex flex-wrap h-auto gap-1'>
-            <TabsTrigger value='overview' className='text-sm font-semibold'>
+          <TabsList className='mb-6 flex flex-row flex-wrap gap-2 overflow-x-auto pb-1 pr-2 no-scrollbar'>
+            <TabsTrigger
+              value='overview'
+              className='text-sm font-semibold whitespace-nowrap'
+            >
               Overview
             </TabsTrigger>
-            <TabsTrigger value='itinerary' className='text-sm font-semibold'>
+            <TabsTrigger
+              value='itinerary'
+              className='text-sm font-semibold whitespace-nowrap'
+            >
               Locations
             </TabsTrigger>
-            <TabsTrigger value='activities' className='text-sm font-semibold'>
+            <TabsTrigger
+              value='activities'
+              className='text-sm font-semibold whitespace-nowrap'
+            >
               Activities
             </TabsTrigger>
-            <TabsTrigger value='prayer' className='text-sm font-semibold'>
+            <TabsTrigger
+              value='prayer'
+              className='text-sm font-semibold whitespace-nowrap'
+            >
               Prayer Times
             </TabsTrigger>
-            <TabsTrigger value='nearby' className='text-sm font-semibold'>
+            <TabsTrigger
+              value='nearby'
+              className='text-sm font-semibold whitespace-nowrap'
+            >
               Nearby
             </TabsTrigger>
-            <TabsTrigger value='conflicts' className='text-sm font-semibold'>
+            <TabsTrigger
+              value='conflicts'
+              className='text-sm font-semibold whitespace-nowrap'
+            >
               Conflicts
             </TabsTrigger>
-            <TabsTrigger value='map' className='text-sm font-semibold'>
+            <TabsTrigger
+              value='map'
+              className='text-sm font-semibold whitespace-nowrap'
+            >
               Map
             </TabsTrigger>
           </TabsList>
@@ -207,7 +228,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
             />
           </TabsContent>
           <TabsContent value='map'>
-            <div className='h-72 rounded-lg overflow-hidden'>
+            <div className='h-72 md:h-96 lg:h-130 rounded-lg overflow-hidden'>
               <h2 className='text-xl font-semibold mb-4'>Map</h2>
               <Map
                 itineraries={trip.locations.map((loc, idx) => ({
