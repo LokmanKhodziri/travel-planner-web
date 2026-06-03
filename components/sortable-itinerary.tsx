@@ -20,7 +20,10 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { Button } from "./ui/button";
 
-type LocationItem = ApiLocation & { createAt: Date; updateAt: Date | null };
+type LocationItem = Omit<ApiLocation, "createAt" | "updateAt"> & {
+  createAt: Date;
+  updateAt: Date | null;
+};
 
 function SortableItem({
   location,
@@ -31,9 +34,10 @@ function SortableItem({
   tripId: string;
   onDelete: (id: string) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
-    id: location.id,
-  });
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({
+      id: location.id,
+    });
   const style = { transform: CSS.Transform.toString(transform), transition };
 
   const handleDelete = async () => {
@@ -51,10 +55,15 @@ function SortableItem({
       style={style}
       {...attributes}
       {...listeners}
-      className="p-4 bg-white rounded-lg shadow flex justify-between items-center"
+      className='p-4 bg-white rounded-lg shadow flex justify-between items-center'
     >
-      <h3 className="text-xl font-semibold">{location.locationTitle}</h3>
-      <Button variant="destructive" size="sm" onClick={handleDelete} className="ml-4">
+      <h3 className='text-xl font-semibold'>{location.locationTitle}</h3>
+      <Button
+        variant='destructive'
+        size='sm'
+        onClick={handleDelete}
+        className='ml-4'
+      >
         Delete
       </Button>
     </div>
@@ -83,15 +92,21 @@ export default function SortableItinerary({
       const newIndex = current.findIndex((item) => item.id === over.id);
       const newItems = arrayMove(current, oldIndex, newIndex);
       const locationIds = newItems.map((item) => item.id);
-      api.reorderLocations(tripId, locationIds).catch((err) => console.error(err));
+      api
+        .reorderLocations(tripId, locationIds)
+        .catch((err) => console.error(err));
       return newItems;
     });
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+    >
       <SortableContext items={items} strategy={verticalListSortingStrategy}>
-        <div className="space-y-4">
+        <div className='space-y-4'>
           {items.map((location) => (
             <SortableItem
               key={location.id}

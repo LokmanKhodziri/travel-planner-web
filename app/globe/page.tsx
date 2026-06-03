@@ -14,12 +14,15 @@ export default function GlobePage() {
   const globeContainerRef = useRef<HTMLDivElement>(null);
   const [globeSize, setGlobeSize] = useState({ width: 0, height: 0 });
   const [locations, setLocations] = useState<TransformedLocation[]>([]);
-  const [visitedCountries, setVisitedCountries] = useState<Set<string>>(new Set());
+  const [visitedCountries, setVisitedCountries] = useState<Set<string>>(
+    new Set(),
+  );
   const [isLoading, setLoading] = useState(true);
 
   const updateGlobeSize = useCallback(() => {
     if (globeContainerRef.current) {
-      const { width, height } = globeContainerRef.current.getBoundingClientRect();
+      const { width, height } =
+        globeContainerRef.current.getBoundingClientRect();
       setGlobeSize({ width, height });
     }
   }, []);
@@ -31,7 +34,11 @@ export default function GlobePage() {
       resizeObserver.observe(currentRef);
       updateGlobeSize();
     }
-    return () => currentRef && resizeObserver.unobserve(currentRef);
+    return () => {
+      if (currentRef) {
+        resizeObserver.unobserve(currentRef);
+      }
+    };
   }, [updateGlobeSize]);
 
   useEffect(() => {
@@ -40,7 +47,7 @@ export default function GlobePage() {
       .then((data) => {
         setLocations(data);
         setVisitedCountries(
-          new Set(data.map((l) => l.county).filter((c): c is string => !!c))
+          new Set(data.map((l) => l.county).filter((c): c is string => !!c)),
         );
       })
       .catch(console.error)
@@ -55,40 +62,40 @@ export default function GlobePage() {
   }, [isLoading]);
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-white to-gray-50">
-      <div className="container mx-auto px-6 py-12">
-        <header className="text-center mb-16">
-          <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-teal-600 bg-clip-text text-transparent">
+    <main className='min-h-screen bg-gradient-to-b from-white to-gray-50'>
+      <div className='container mx-auto px-6 py-12'>
+        <header className='text-center mb-16'>
+          <h1 className='text-5xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-teal-600 bg-clip-text text-transparent'>
             Interactive World Globe
           </h1>
-          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+          <p className='text-xl text-gray-600 max-w-2xl mx-auto'>
             Explore and discover destinations across the globe
           </p>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+        <div className='grid grid-cols-1 lg:grid-cols-3 gap-8 items-start'>
           <div
             ref={globeContainerRef}
-            className="lg:col-span-2 bg-white rounded-2xl shadow-xl border overflow-hidden w-full h-[300px] sm:h-[400px] md:h-[500px] lg:h-[600px]"
+            className='lg:col-span-2 bg-white rounded-2xl shadow-xl border overflow-hidden w-full h-[300px] sm:h-[400px] md:h-[500px] lg:h-[600px]'
           >
             {isLoading ? (
-              <div className="flex justify-center items-center h-full">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900" />
+              <div className='flex justify-center items-center h-full'>
+                <div className='animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900' />
               </div>
             ) : (
               <Globe
                 ref={globeRef}
-                globeImageUrl="//unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
-                bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
-                backgroundColor="rgba(255,255,255,0)"
+                globeImageUrl='//unpkg.com/three-globe/example/img/earth-blue-marble.jpg'
+                bumpImageUrl='//unpkg.com/three-globe/example/img/earth-topology.png'
+                backgroundColor='rgba(255,255,255,0)'
                 showAtmosphere
-                atmosphereColor="#4299e1"
+                atmosphereColor='#4299e1'
                 atmosphereAltitude={0.15}
                 width={globeSize.width}
                 height={globeSize.height}
-                pointLabel="name"
-                pointLat="latitude"
-                pointLng="longitude"
+                pointLabel='name'
+                pointLat='latitude'
+                pointLng='longitude'
                 pointsData={locations}
                 pointRadius={0.7}
                 pointsMerge
@@ -98,22 +105,28 @@ export default function GlobePage() {
             )}
           </div>
 
-          <div className="lg:col-span-1 space-y-6">
-            <div className="bg-white rounded-xl p-6 shadow-lg border border-gray-100">
-              <h2 className="text-2xl font-semibold mb-4 text-gray-800">Statistics</h2>
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Total Destinations</span>
-                  <span className="text-blue-600 font-semibold">{locations.length}</span>
+          <div className='lg:col-span-1 space-y-6'>
+            <div className='bg-white rounded-xl p-6 shadow-lg border border-gray-100'>
+              <h2 className='text-2xl font-semibold mb-4 text-gray-800'>
+                Statistics
+              </h2>
+              <div className='space-y-4'>
+                <div className='flex justify-between items-center'>
+                  <span className='text-gray-600'>Total Destinations</span>
+                  <span className='text-blue-600 font-semibold'>
+                    {locations.length}
+                  </span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Countries Visited</span>
-                  <span className="text-blue-600 font-semibold">{visitedCountries.size}</span>
+                <div className='flex justify-between items-center'>
+                  <span className='text-gray-600'>Countries Visited</span>
+                  <span className='text-blue-600 font-semibold'>
+                    {visitedCountries.size}
+                  </span>
                 </div>
               </div>
             </div>
-            <div className="bg-white rounded-xl p-6 shadow-lg border border-gray-100">
-              <h2 className="text-2xl font-semibold mb-4 text-gray-800">
+            <div className='bg-white rounded-xl p-6 shadow-lg border border-gray-100'>
+              <h2 className='text-2xl font-semibold mb-4 text-gray-800'>
                 Last 5 Visited Countries
               </h2>
               <VisitedCountriesList countries={visitedCountries} />
