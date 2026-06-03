@@ -69,6 +69,11 @@ export interface NearbyPlace {
   openNow?: boolean;
 }
 
+export interface PlaceSuggestion {
+  id: string;
+  description: string;
+}
+
 export interface PrayerConflict {
   activityId: string;
   activityTitle: string;

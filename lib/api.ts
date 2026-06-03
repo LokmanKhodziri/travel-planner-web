@@ -7,6 +7,7 @@ import type {
   PrayerTimings,
   NearbyPlace,
   PrayerConflict,
+  PlaceSuggestion,
 } from "@/types/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -14,7 +15,9 @@ const JWT_COOKIE = "jwt";
 
 function getToken(): string | null {
   if (typeof document === "undefined") return null;
-  const match = document.cookie.match(new RegExp(`(?:^| )${JWT_COOKIE}=([^;]+)`));
+  const match = document.cookie.match(
+    new RegExp(`(?:^| )${JWT_COOKIE}=([^;]+)`),
+  );
   return match ? decodeURIComponent(match[1]) : null;
 }
 
@@ -25,11 +28,15 @@ function authHeaders(): HeadersInit {
 
 export async function fetchApi<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
 ): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
-    headers: { "Content-Type": "application/json", ...authHeaders(), ...options.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+      ...options.headers,
+    },
     credentials: "include",
   });
   if (!res.ok) {
@@ -43,7 +50,9 @@ export const api = {
   getMe: () => fetchApi<ApiUser>("/api/auth/me"),
   getTrips: () => fetchApi<ApiTrip[]>("/api/trips"),
   getTrip: (id: string) =>
-    fetchApi<ApiTrip & { locations: ApiLocation[]; activities: ApiActivity[] }>(`/api/trips/${id}`),
+    fetchApi<ApiTrip & { locations: ApiLocation[]; activities: ApiActivity[] }>(
+      `/api/trips/${id}`,
+    ),
   createTrip: (body: {
     title: string;
     description: string;
@@ -62,35 +71,59 @@ export const api = {
       body: JSON.stringify({ address }),
     }),
   deleteLocation: (locationId: string, tripId: string) =>
-    fetchApi<{ success: boolean }>(`/api/locations/${locationId}?tripId=${encodeURIComponent(tripId)}`, {
-      method: "DELETE",
-    }),
+    fetchApi<{ success: boolean }>(
+      `/api/locations/${locationId}?tripId=${encodeURIComponent(tripId)}`,
+      {
+        method: "DELETE",
+      },
+    ),
   reorderLocations: (tripId: string, locationIds: string[]) =>
     fetchApi<{ success: boolean }>("/api/locations/reorder", {
       method: "PATCH",
       body: JSON.stringify({ tripId, locationIds }),
     }),
   getPrayerTimes: (tripId: string, date: string) =>
-    fetchApi<PrayerTimings>(`/api/trips/${tripId}/prayer-times?date=${encodeURIComponent(date)}`),
+    fetchApi<PrayerTimings>(
+      `/api/trips/${tripId}/prayer-times?date=${encodeURIComponent(date)}`,
+    ),
   getNearbyMosques: (tripId: string, radius = 5000) =>
-    fetchApi<NearbyPlace[]>(`/api/trips/${tripId}/nearby/mosques?radius=${radius}`),
+    fetchApi<NearbyPlace[]>(
+      `/api/trips/${tripId}/nearby/mosques?radius=${radius}`,
+    ),
   getNearbyHalal: (tripId: string, radius = 5000) =>
-    fetchApi<NearbyPlace[]>(`/api/trips/${tripId}/nearby/halal?radius=${radius}`),
-  getActivities: (tripId: string) => fetchApi<ApiActivity[]>(`/api/trips/${tripId}/activities`),
+    fetchApi<NearbyPlace[]>(
+      `/api/trips/${tripId}/nearby/halal?radius=${radius}`,
+    ),
+  searchPlaces: (input: string) =>
+    fetchApi<PlaceSuggestion[]>(
+      `/api/places/search?input=${encodeURIComponent(input)}`,
+    ),
+  getActivities: (tripId: string) =>
+    fetchApi<ApiActivity[]>(`/api/trips/${tripId}/activities`),
   createActivity: (
     tripId: string,
-    body: { title: string; description?: string; startTime: string; endTime: string }
+    body: {
+      title: string;
+      description?: string;
+      startTime: string;
+      endTime: string;
+    },
   ) =>
     fetchApi<ApiActivity>(`/api/trips/${tripId}/activities`, {
       method: "POST",
       body: JSON.stringify(body),
     }),
   deleteActivity: (tripId: string, activityId: string) =>
-    fetchApi<{ success: boolean }>(`/api/trips/${tripId}/activities/${activityId}`, {
-      method: "DELETE",
-    }),
+    fetchApi<{ success: boolean }>(
+      `/api/trips/${tripId}/activities/${activityId}`,
+      {
+        method: "DELETE",
+      },
+    ),
   getConflicts: (tripId: string, date: string) =>
-    fetchApi<PrayerConflict[]>(`/api/trips/${tripId}/conflicts?date=${encodeURIComponent(date)}`),
+    fetchApi<PrayerConflict[]>(
+      `/api/trips/${tripId}/conflicts?date=${encodeURIComponent(date)}`,
+    ),
 };
 
 export { JWT_COOKIE, getToken };
