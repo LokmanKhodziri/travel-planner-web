@@ -12,7 +12,6 @@ import SortableItinerary from "./sortable-itinerary";
 import PrayerTimesPanel from "./prayer-times-panel";
 import NearbyPlacesPanel from "./nearby-places-panel";
 import ItineraryActivities from "./itinerary-activities";
-import ConflictAlerts from "./conflict-alerts";
 import { formatDate } from "@/lib/utils";
 
 export type TripWithLocations = Omit<
@@ -80,7 +79,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
 
       <div className='bg-white p-6 shadow rounded-lg'>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className='mb-6 flex flex-row flex-wrap gap-2 overflow-x-auto pb-1 pr-2 no-scrollbar'>
+          <TabsList className='mb-6 flex w-full flex-row flex-nowrap gap-2 overflow-x-auto overflow-y-hidden pb-1 pr-2 no-scrollbar'>
             <TabsTrigger
               value='overview'
               className='text-sm font-semibold whitespace-nowrap'
@@ -110,12 +109,6 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
               className='text-sm font-semibold whitespace-nowrap'
             >
               Nearby
-            </TabsTrigger>
-            <TabsTrigger
-              value='conflicts'
-              className='text-sm font-semibold whitespace-nowrap'
-            >
-              Conflicts
             </TabsTrigger>
             <TabsTrigger
               value='map'
@@ -148,8 +141,8 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                   </p>
                 </div>
                 <p className='text-sm text-emerald-700 mt-4'>
-                  Muslim-friendly features: prayer times, nearby mosques & Halal
-                  food, and schedule conflict alerts.
+                  Muslim-friendly features: prayer times, nearby mosques, and
+                  Halal food.
                 </p>
               </div>
               <p className='text-gray-500 mt-4 leading-relaxed'>
@@ -219,13 +212,6 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
           </TabsContent>
           <TabsContent value='nearby'>
             <NearbyPlacesPanel tripId={trip.id} hasLocations={hasLocations} />
-          </TabsContent>
-          <TabsContent value='conflicts'>
-            <ConflictAlerts
-              tripId={trip.id}
-              defaultDate={defaultDate}
-              hasLocations={hasLocations}
-            />
           </TabsContent>
           <TabsContent value='map'>
             <div className='h-72 md:h-96 lg:h-130 rounded-lg overflow-hidden'>

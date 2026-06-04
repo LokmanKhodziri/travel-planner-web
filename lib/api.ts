@@ -6,7 +6,6 @@ import type {
   ApiUser,
   PrayerTimings,
   NearbyPlace,
-  PrayerConflict,
   PlaceSuggestion,
 } from "@/types/api";
 
@@ -119,10 +118,6 @@ export const api = {
       {
         method: "DELETE",
       },
-    ),
-  getConflicts: (tripId: string, date: string) =>
-    fetchApi<PrayerConflict[]>(
-      `/api/trips/${tripId}/conflicts?date=${encodeURIComponent(date)}`,
     ),
 };
 
