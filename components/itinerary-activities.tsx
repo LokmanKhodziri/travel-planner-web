@@ -131,8 +131,7 @@ export default function ItineraryActivities({
 
       {!loading && activities.length === 0 && (
         <p className='text-gray-500'>
-          No timed activities yet. Add activities to enable prayer conflict
-          detection.
+          No timed activities yet. Add activities to plan your itinerary.
         </p>
       )}
 

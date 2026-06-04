@@ -12,7 +12,6 @@ import SortableItinerary from "./sortable-itinerary";
 import PrayerTimesPanel from "./prayer-times-panel";
 import NearbyPlacesPanel from "./nearby-places-panel";
 import ItineraryActivities from "./itinerary-activities";
-import ConflictAlerts from "./conflict-alerts";
 import { formatDate } from "@/lib/utils";
 
 export type TripWithLocations = Omit<
@@ -112,12 +111,6 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
               Nearby
             </TabsTrigger>
             <TabsTrigger
-              value='conflicts'
-              className='text-sm font-semibold whitespace-nowrap'
-            >
-              Conflicts
-            </TabsTrigger>
-            <TabsTrigger
               value='map'
               className='text-sm font-semibold whitespace-nowrap'
             >
@@ -148,8 +141,8 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                   </p>
                 </div>
                 <p className='text-sm text-emerald-700 mt-4'>
-                  Muslim-friendly features: prayer times, nearby mosques & Halal
-                  food, and schedule conflict alerts.
+                  Muslim-friendly features: prayer times, nearby mosques, and
+                  Halal food.
                 </p>
               </div>
               <p className='text-gray-500 mt-4 leading-relaxed'>
@@ -219,13 +212,6 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
           </TabsContent>
           <TabsContent value='nearby'>
             <NearbyPlacesPanel tripId={trip.id} hasLocations={hasLocations} />
-          </TabsContent>
-          <TabsContent value='conflicts'>
-            <ConflictAlerts
-              tripId={trip.id}
-              defaultDate={defaultDate}
-              hasLocations={hasLocations}
-            />
           </TabsContent>
           <TabsContent value='map'>
             <div className='h-72 md:h-96 lg:h-130 rounded-lg overflow-hidden'>

@@ -74,14 +74,6 @@ export interface PlaceSuggestion {
   description: string;
 }
 
-export interface PrayerConflict {
-  activityId: string;
-  activityTitle: string;
-  prayerName: string;
-  prayerTime: string;
-  message: string;
-}
-
 export interface TransformedLocation {
   name: string;
   latitude: number;
