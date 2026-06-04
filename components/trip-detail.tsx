@@ -79,7 +79,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
 
       <div className='bg-white p-6 shadow rounded-lg'>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className='mb-6 flex flex-row flex-wrap gap-2 overflow-x-auto pb-1 pr-2 no-scrollbar'>
+          <TabsList className='mb-6 flex w-full flex-row flex-nowrap gap-2 overflow-x-auto overflow-y-hidden pb-1 pr-2 no-scrollbar'>
             <TabsTrigger
               value='overview'
               className='text-sm font-semibold whitespace-nowrap'
