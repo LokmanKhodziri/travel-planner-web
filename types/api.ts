@@ -5,6 +5,7 @@ export interface ApiUser {
   email: string;
   name: string | null;
   image: string | null;
+  role: "USER" | "ADMIN";
 }
 
 export interface ApiLocation {
