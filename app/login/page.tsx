@@ -8,7 +8,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">Sign In</CardTitle>
-          <p className="text-gray-500">Choose your preferred provider to sign in</p>
+          <p className="text-gray-500">Use email or choose a social provider</p>
         </CardHeader>
         <CardContent>
           <LoginForm />
