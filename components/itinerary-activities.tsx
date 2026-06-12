@@ -25,6 +25,8 @@ export default function ItineraryActivities({
   const [recommendations, setRecommendations] =
     useState<ActivityRecommendationsResponse | null>(null);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [activeRecommendationCategory, setActiveRecommendationCategory] =
+    useState("All");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [startTime, setStartTime] = useState("");
@@ -159,6 +161,7 @@ export default function ItineraryActivities({
         title: place.name,
         description: [
           place.category ? `Category: ${place.category}` : null,
+          place.about ? `About: ${place.about}` : null,
           place.address ? `Address: ${place.address}` : null,
           `Recommended near ${sourceTitle}`,
           place.rating != null ? `Rating: ${place.rating.toFixed(1)}` : null,
@@ -191,6 +194,20 @@ export default function ItineraryActivities({
       );
     }
   }
+
+  const recommendationCategories = recommendations
+    ? [
+        "All",
+        ...Array.from(
+          new Set(
+            recommendations.rows
+              .flatMap((row) => row.recommendations)
+              .map((place) => place.category)
+              .filter((category): category is string => Boolean(category)),
+          ),
+        ),
+      ]
+    : ["All"];
 
   return (
     <div className='space-y-6'>
@@ -265,6 +282,22 @@ export default function ItineraryActivities({
             <p className='rounded-lg bg-white p-3 text-sm text-blue-800'>
               {recommendations.note}
             </p>
+            <div className='flex gap-2 overflow-x-auto pb-1'>
+              {recommendationCategories.map((category) => (
+                <button
+                  key={category}
+                  type='button'
+                  onClick={() => setActiveRecommendationCategory(category)}
+                  className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition ${
+                    activeRecommendationCategory === category
+                      ? "bg-blue-600 text-white"
+                      : "bg-white text-gray-700 hover:bg-blue-50"
+                  }`}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
             {recommendations.rows.map((row) => (
               <div
                 key={row.sourceLocation.id}
@@ -279,93 +312,113 @@ export default function ItineraryActivities({
                   )}
                 </div>
 
-                {row.recommendations.length === 0 && !row.error ? (
-                  <p className='text-sm text-gray-500'>
-                    No activities found near this location.
-                  </p>
-                ) : (
-                  <div className='grid gap-3 lg:grid-cols-2'>
-                    {row.recommendations.slice(0, 6).map((place) => {
-                      const time = defaultRecommendationTime(place.id);
+                {(() => {
+                  const filteredRecommendations =
+                    activeRecommendationCategory === "All"
+                      ? row.recommendations
+                      : row.recommendations.filter(
+                          (place) =>
+                            place.category === activeRecommendationCategory,
+                        );
 
-                      return (
-                        <div
-                          key={place.id}
-                          className='rounded-lg border border-gray-100 p-3'
-                        >
-                          <div className='flex flex-wrap items-start justify-between gap-2'>
-                            <div>
-                              <p className='font-semibold text-gray-900'>
-                                {place.name}
-                              </p>
-                              <p className='text-sm text-gray-500'>
-                                {place.address || "No address available"}
-                              </p>
-                            </div>
-                            {place.category && (
-                              <span className='rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600'>
-                                {place.category}
-                              </span>
-                            )}
-                          </div>
-                          <div className='mt-2 flex flex-wrap gap-3 text-xs text-gray-500'>
-                            {place.rating != null && (
-                              <span>Rating {place.rating.toFixed(1)}</span>
-                            )}
-                            <a
-                              href={`https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}`}
-                              target='_blank'
-                              rel='noreferrer'
-                              className='text-blue-600 hover:underline'
-                            >
-                              View on Maps
-                            </a>
-                          </div>
-                          <div className='mt-3 grid gap-2 sm:grid-cols-2'>
-                            <input
-                              type='datetime-local'
-                              value={time.startTime}
-                              onChange={(e) =>
-                                updateRecommendationTime(
-                                  place.id,
-                                  "startTime",
-                                  e.target.value,
-                                )
-                              }
-                              className='rounded-lg border border-gray-300 p-2 text-sm'
-                            />
-                            <input
-                              type='datetime-local'
-                              value={time.endTime}
-                              onChange={(e) =>
-                                updateRecommendationTime(
-                                  place.id,
-                                  "endTime",
-                                  e.target.value,
-                                )
-                              }
-                              className='rounded-lg border border-gray-300 p-2 text-sm'
-                            />
-                          </div>
-                          <Button
-                            type='button'
-                            size='sm'
-                            className='mt-3'
-                            disabled={submitting}
-                            onClick={() =>
-                              handleAddRecommendation(
-                                place,
-                                row.sourceLocation.title,
-                              )
-                            }
+                  if (filteredRecommendations.length === 0 && !row.error) {
+                    return (
+                      <p className='text-sm text-gray-500'>
+                        {activeRecommendationCategory === "All"
+                          ? "No activity recommendations"
+                          : `No ${activeRecommendationCategory.toLowerCase()} recommendations`}{" "}
+                        found near this location.
+                      </p>
+                    );
+                  }
+
+                  return (
+                    <div className='grid gap-3 lg:grid-cols-2'>
+                      {filteredRecommendations.slice(0, 6).map((place) => {
+                        const time = defaultRecommendationTime(place.id);
+
+                        return (
+                          <div
+                            key={place.id}
+                            className='rounded-lg border border-gray-100 p-3'
                           >
-                            Add to Activities
-                          </Button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                            <div className='flex flex-wrap items-start justify-between gap-2'>
+                              <div>
+                                <p className='font-semibold text-gray-900'>
+                                  {place.name}
+                                </p>
+                                <p className='text-sm text-gray-500'>
+                                  {place.address || "No address available"}
+                                </p>
+                                <p className='mt-2 text-sm text-gray-600'>
+                                  {place.about}
+                                </p>
+                              </div>
+                              {place.category && (
+                                <span className='rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600'>
+                                  {place.category}
+                                </span>
+                              )}
+                            </div>
+                            <div className='mt-2 flex flex-wrap gap-3 text-xs text-gray-500'>
+                              {place.rating != null && (
+                                <span>Rating {place.rating.toFixed(1)}</span>
+                              )}
+                              <a
+                                href={`https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}`}
+                                target='_blank'
+                                rel='noreferrer'
+                                className='text-blue-600 hover:underline'
+                              >
+                                View on Maps
+                              </a>
+                            </div>
+                            <div className='mt-3 grid gap-2 sm:grid-cols-2'>
+                              <input
+                                type='datetime-local'
+                                value={time.startTime}
+                                onChange={(e) =>
+                                  updateRecommendationTime(
+                                    place.id,
+                                    "startTime",
+                                    e.target.value,
+                                  )
+                                }
+                                className='rounded-lg border border-gray-300 p-2 text-sm'
+                              />
+                              <input
+                                type='datetime-local'
+                                value={time.endTime}
+                                onChange={(e) =>
+                                  updateRecommendationTime(
+                                    place.id,
+                                    "endTime",
+                                    e.target.value,
+                                  )
+                                }
+                                className='rounded-lg border border-gray-300 p-2 text-sm'
+                              />
+                            </div>
+                            <Button
+                              type='button'
+                              size='sm'
+                              className='mt-3'
+                              disabled={submitting}
+                              onClick={() =>
+                                handleAddRecommendation(
+                                  place,
+                                  row.sourceLocation.title,
+                                )
+                              }
+                            >
+                              Add to Activities
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </div>
             ))}
           </div>

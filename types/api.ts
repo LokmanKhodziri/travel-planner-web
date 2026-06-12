@@ -67,8 +67,10 @@ export interface NearbyPlace {
   latitude: number;
   longitude: number;
   rating?: number;
+  userRatingsTotal?: number;
   openNow?: boolean;
   category?: string;
+  about: string;
 }
 
 export interface ActivityRecommendationRow {
