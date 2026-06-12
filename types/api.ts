@@ -68,6 +68,25 @@ export interface NearbyPlace {
   longitude: number;
   rating?: number;
   openNow?: boolean;
+  category?: string;
+}
+
+export interface ActivityRecommendationRow {
+  sourceLocation: {
+    id: string;
+    title: string;
+    latitude: number;
+    longitude: number;
+  };
+  recommendations: NearbyPlace[];
+  error: string | null;
+}
+
+export interface ActivityRecommendationsResponse {
+  radius: number;
+  source: string;
+  note: string;
+  rows: ActivityRecommendationRow[];
 }
 
 export interface PlaceSuggestion {

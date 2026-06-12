@@ -201,7 +201,11 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
             </div>
           </TabsContent>
           <TabsContent value='activities'>
-            <ItineraryActivities tripId={trip.id} />
+            <ItineraryActivities
+              tripId={trip.id}
+              defaultDate={defaultDate}
+              hasLocations={hasLocations}
+            />
           </TabsContent>
           <TabsContent value='prayer'>
             <PrayerTimesPanel

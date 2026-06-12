@@ -2,22 +2,36 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { ApiActivity } from "@/types/api";
+import type {
+  ActivityRecommendationsResponse,
+  ApiActivity,
+  NearbyPlace,
+} from "@/types/api";
 import { formatDateTime } from "@/lib/utils";
 import { Button } from "./ui/button";
 
 interface ItineraryActivitiesProps {
   tripId: string;
+  defaultDate: string;
+  hasLocations: boolean;
 }
 
 export default function ItineraryActivities({
   tripId,
+  defaultDate,
+  hasLocations,
 }: ItineraryActivitiesProps) {
   const [activities, setActivities] = useState<ApiActivity[]>([]);
+  const [recommendations, setRecommendations] =
+    useState<ActivityRecommendationsResponse | null>(null);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
+  const [recommendationTimes, setRecommendationTimes] = useState<
+    Record<string, { startTime: string; endTime: string }>
+  >({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +53,62 @@ export default function ItineraryActivities({
     loadActivities();
   }, [tripId]);
 
+  useEffect(() => {
+    if (!hasLocations) return;
+
+    setRecommendationsLoading(true);
+    api
+      .getActivityRecommendations(tripId)
+      .then(setRecommendations)
+      .catch((err) =>
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load activity recommendations",
+        ),
+      )
+      .finally(() => setRecommendationsLoading(false));
+  }, [tripId, hasLocations]);
+
+  function defaultRecommendationTime(placeId: string) {
+    return (
+      recommendationTimes[placeId] ?? {
+        startTime: `${defaultDate}T09:00`,
+        endTime: `${defaultDate}T11:00`,
+      }
+    );
+  }
+
+  function updateRecommendationTime(
+    placeId: string,
+    field: "startTime" | "endTime",
+    value: string,
+  ) {
+    setRecommendationTimes((prev) => ({
+      ...prev,
+      [placeId]: {
+        ...defaultRecommendationTime(placeId),
+        ...prev[placeId],
+        [field]: value,
+      },
+    }));
+  }
+
+  async function createActivity(body: {
+    title: string;
+    description?: string;
+    startTime: string;
+    endTime: string;
+  }) {
+    const created = await api.createActivity(tripId, body);
+    setActivities((prev) =>
+      [...prev, created].sort((a, b) =>
+        a.startTime.localeCompare(b.startTime),
+      ),
+    );
+    return created;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title || !startTime || !endTime) return;
@@ -46,17 +116,12 @@ export default function ItineraryActivities({
     setSubmitting(true);
     setError(null);
     try {
-      const created = await api.createActivity(tripId, {
+      await createActivity({
         title,
         description: description || undefined,
         startTime: new Date(startTime).toISOString(),
         endTime: new Date(endTime).toISOString(),
       });
-      setActivities((prev) =>
-        [...prev, created].sort((a, b) =>
-          a.startTime.localeCompare(b.startTime),
-        ),
-      );
       setTitle("");
       setDescription("");
       setStartTime("");
@@ -64,6 +129,50 @@ export default function ItineraryActivities({
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to create activity",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleAddRecommendation(
+    place: NearbyPlace,
+    sourceTitle: string,
+  ) {
+    const time = defaultRecommendationTime(place.id);
+    const start = new Date(time.startTime);
+    const end = new Date(time.endTime);
+
+    if (
+      Number.isNaN(start.getTime()) ||
+      Number.isNaN(end.getTime()) ||
+      end <= start
+    ) {
+      setError("Choose a valid start and end time for the recommendation.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      await createActivity({
+        title: place.name,
+        description: [
+          place.category ? `Category: ${place.category}` : null,
+          place.address ? `Address: ${place.address}` : null,
+          `Recommended near ${sourceTitle}`,
+          place.rating != null ? `Rating: ${place.rating.toFixed(1)}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+      });
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to add recommended activity",
       );
     } finally {
       setSubmitting(false);
@@ -128,6 +237,140 @@ export default function ItineraryActivities({
 
       {error && <p className='text-red-600'>{error}</p>}
       {loading && <p className='text-gray-500'>Loading activities...</p>}
+
+      <section className='rounded-lg border border-blue-100 bg-blue-50/40 p-4'>
+        <div className='mb-4'>
+          <h3 className='font-semibold text-gray-800'>
+            Recommended activities
+          </h3>
+          <p className='text-sm text-gray-600'>
+            Suggestions are based on your saved trip locations. Pick a time
+            range and add any suggestion into your itinerary activities.
+          </p>
+        </div>
+
+        {!hasLocations ? (
+          <p className='text-sm text-gray-500'>
+            Add at least one location before requesting activity
+            recommendations.
+          </p>
+        ) : recommendationsLoading ? (
+          <p className='text-sm text-gray-500'>Loading recommendations...</p>
+        ) : !recommendations ? (
+          <p className='text-sm text-gray-500'>
+            No recommendations loaded yet.
+          </p>
+        ) : (
+          <div className='space-y-5'>
+            <p className='rounded-lg bg-white p-3 text-sm text-blue-800'>
+              {recommendations.note}
+            </p>
+            {recommendations.rows.map((row) => (
+              <div
+                key={row.sourceLocation.id}
+                className='rounded-lg border border-blue-100 bg-white p-4'
+              >
+                <div className='mb-3'>
+                  <p className='font-medium text-gray-900'>
+                    Near {row.sourceLocation.title}
+                  </p>
+                  {row.error && (
+                    <p className='mt-1 text-sm text-amber-700'>{row.error}</p>
+                  )}
+                </div>
+
+                {row.recommendations.length === 0 && !row.error ? (
+                  <p className='text-sm text-gray-500'>
+                    No activities found near this location.
+                  </p>
+                ) : (
+                  <div className='grid gap-3 lg:grid-cols-2'>
+                    {row.recommendations.slice(0, 6).map((place) => {
+                      const time = defaultRecommendationTime(place.id);
+
+                      return (
+                        <div
+                          key={place.id}
+                          className='rounded-lg border border-gray-100 p-3'
+                        >
+                          <div className='flex flex-wrap items-start justify-between gap-2'>
+                            <div>
+                              <p className='font-semibold text-gray-900'>
+                                {place.name}
+                              </p>
+                              <p className='text-sm text-gray-500'>
+                                {place.address || "No address available"}
+                              </p>
+                            </div>
+                            {place.category && (
+                              <span className='rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600'>
+                                {place.category}
+                              </span>
+                            )}
+                          </div>
+                          <div className='mt-2 flex flex-wrap gap-3 text-xs text-gray-500'>
+                            {place.rating != null && (
+                              <span>Rating {place.rating.toFixed(1)}</span>
+                            )}
+                            <a
+                              href={`https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}`}
+                              target='_blank'
+                              rel='noreferrer'
+                              className='text-blue-600 hover:underline'
+                            >
+                              View on Maps
+                            </a>
+                          </div>
+                          <div className='mt-3 grid gap-2 sm:grid-cols-2'>
+                            <input
+                              type='datetime-local'
+                              value={time.startTime}
+                              onChange={(e) =>
+                                updateRecommendationTime(
+                                  place.id,
+                                  "startTime",
+                                  e.target.value,
+                                )
+                              }
+                              className='rounded-lg border border-gray-300 p-2 text-sm'
+                            />
+                            <input
+                              type='datetime-local'
+                              value={time.endTime}
+                              onChange={(e) =>
+                                updateRecommendationTime(
+                                  place.id,
+                                  "endTime",
+                                  e.target.value,
+                                )
+                              }
+                              className='rounded-lg border border-gray-300 p-2 text-sm'
+                            />
+                          </div>
+                          <Button
+                            type='button'
+                            size='sm'
+                            className='mt-3'
+                            disabled={submitting}
+                            onClick={() =>
+                              handleAddRecommendation(
+                                place,
+                                row.sourceLocation.title,
+                              )
+                            }
+                          >
+                            Add to Activities
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {!loading && activities.length === 0 && (
         <p className='text-gray-500'>
