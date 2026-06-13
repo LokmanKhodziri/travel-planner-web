@@ -41,6 +41,11 @@ function SortableItem({
   const style = { transform: CSS.Transform.toString(transform), transition };
 
   const handleDelete = async () => {
+    const confirmed = window.confirm(
+      `Delete "${location.locationTitle}" from this trip? This action cannot be undone.`,
+    );
+    if (!confirmed) return;
+
     try {
       await api.deleteLocation(location.id, tripId);
       onDelete(location.id);
