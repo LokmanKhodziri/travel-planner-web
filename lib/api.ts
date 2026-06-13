@@ -7,6 +7,7 @@ import type {
   PrayerTimings,
   NearbyPlace,
   PlaceSuggestion,
+  ActivityRecommendationsResponse,
 } from "@/types/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -92,6 +93,10 @@ export const api = {
   getNearbyHalal: (tripId: string, radius = 5000) =>
     fetchApi<NearbyPlace[]>(
       `/api/trips/${tripId}/nearby/halal?radius=${radius}`,
+    ),
+  getActivityRecommendations: (tripId: string, radius = 5000) =>
+    fetchApi<ActivityRecommendationsResponse>(
+      `/api/trips/${tripId}/activity-recommendations?radius=${radius}`,
     ),
   searchPlaces: (input: string) =>
     fetchApi<PlaceSuggestion[]>(

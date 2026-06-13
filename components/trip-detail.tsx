@@ -3,7 +3,7 @@
 import type { ApiTrip, ApiLocation, ApiActivity } from "@/types/api";
 import Image from "next/image";
 import Link from "next/link";
-import { Calendar, MapPin, Plus } from "lucide-react";
+import { Calendar, Clock, MapPin, Plus } from "lucide-react";
 import { Button } from "./ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { useState } from "react";
@@ -13,6 +13,11 @@ import PrayerTimesPanel from "./prayer-times-panel";
 import NearbyPlacesPanel from "./nearby-places-panel";
 import ItineraryActivities from "./itinerary-activities";
 import { formatDate } from "@/lib/utils";
+
+type TripActivity = Omit<ApiActivity, "createAt" | "updateAt"> & {
+  createAt: Date;
+  updateAt: Date | null;
+};
 
 export type TripWithLocations = Omit<
   ApiTrip,
@@ -24,20 +29,80 @@ export type TripWithLocations = Omit<
     createAt: Date;
     updateAt: Date | null;
   })[];
-  activities?: (Omit<ApiActivity, "createAt" | "updateAt"> & {
-    createAt: Date;
-    updateAt: Date | null;
-  })[];
+  activities?: TripActivity[];
 };
 
 interface TripDetailClientProps {
   trip: TripWithLocations;
 }
 
+interface OverviewDay {
+  dateKey: string;
+  label: string;
+  shortDate: string;
+}
+
+function toDateKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function buildOverviewDays(startDate: Date, endDate: Date): OverviewDay[] {
+  const cursor = new Date(
+    Date.UTC(
+      startDate.getUTCFullYear(),
+      startDate.getUTCMonth(),
+      startDate.getUTCDate(),
+    ),
+  );
+  const finalDay = new Date(
+    Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate()),
+  );
+  const days: OverviewDay[] = [];
+
+  while (cursor <= finalDay && days.length < 31) {
+    days.push({
+      dateKey: toDateKey(cursor),
+      label: `Day ${days.length + 1}`,
+      shortDate: cursor.toLocaleDateString("en-GB", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+      }),
+    });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return days;
+}
+
+function activityDateKey(activity: Pick<TripActivity, "startTime">) {
+  return toDateKey(new Date(activity.startTime));
+}
+
+function timeOnly(value: string) {
+  return new Date(value).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function TripDetailClient({ trip }: TripDetailClientProps) {
   const [activeTab, setActiveTab] = useState("overview");
   const hasLocations = trip.locations.length > 0;
   const defaultDate = trip.startDate.toISOString().slice(0, 10);
+  const overviewDays = buildOverviewDays(trip.startDate, trip.endDate);
+  const tripActivities = trip.activities ?? [];
+  const activitiesByDate = tripActivities.reduce<Record<string, TripActivity[]>>(
+    (groups, activity) => {
+      const key = activityDateKey(activity);
+      groups[key] = [...(groups[key] ?? []), activity];
+      return groups;
+    },
+    {},
+  );
+  const plannedDayCount = overviewDays.filter(
+    (day) => (activitiesByDate[day.dateKey]?.length ?? 0) > 0,
+  ).length;
 
   return (
     <div className='container mx-auto px-4 py-8 space-y-8'>
@@ -96,7 +161,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
               value='activities'
               className='text-sm font-semibold whitespace-nowrap'
             >
-              Activities
+              Planner
             </TabsTrigger>
             <TabsTrigger
               value='prayer'
@@ -148,6 +213,83 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
               <p className='text-gray-500 mt-4 leading-relaxed'>
                 {trip.description}
               </p>
+              <div className='mt-6 rounded-xl border border-blue-100 bg-blue-50/40 p-4'>
+                <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+                  <div>
+                    <h3 className='text-lg font-semibold text-gray-900'>
+                      Daily plan summary
+                    </h3>
+                    <p className='text-sm text-gray-600'>
+                      {plannedDayCount} of {overviewDays.length} day
+                      {overviewDays.length === 1 ? "" : "s"} have planned
+                      activities.
+                    </p>
+                  </div>
+                  <Button
+                    type='button'
+                    size='sm'
+                    onClick={() => setActiveTab("activities")}
+                  >
+                    Open Planner
+                  </Button>
+                </div>
+
+                <div className='mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3'>
+                  {overviewDays.map((day) => {
+                    const dayActivities = activitiesByDate[day.dateKey] ?? [];
+                    const firstActivity = dayActivities[0];
+                    const lastActivity = dayActivities[dayActivities.length - 1];
+
+                    return (
+                      <div
+                        key={day.dateKey}
+                        className='rounded-lg border border-blue-100 bg-white p-4'
+                      >
+                        <div className='flex items-start justify-between gap-3'>
+                          <div>
+                            <p className='font-semibold text-gray-900'>
+                              {day.label}
+                            </p>
+                            <p className='text-sm text-gray-500'>
+                              {day.shortDate}
+                            </p>
+                          </div>
+                          <span className='rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700'>
+                            {dayActivities.length} activit
+                            {dayActivities.length === 1 ? "y" : "ies"}
+                          </span>
+                        </div>
+
+                        {dayActivities.length === 0 ? (
+                          <p className='mt-3 text-sm text-gray-500'>
+                            No activities planned yet.
+                          </p>
+                        ) : (
+                          <div className='mt-3 space-y-3'>
+                            <p className='flex items-center gap-2 text-sm text-gray-600'>
+                              <Clock className='h-4 w-4 text-blue-600' />
+                              {timeOnly(firstActivity.startTime)} -{" "}
+                              {timeOnly(lastActivity.endTime)}
+                            </p>
+                            <ul className='space-y-1 text-sm text-gray-700'>
+                              {dayActivities.slice(0, 3).map((activity) => (
+                                <li key={activity.id} className='truncate'>
+                                  {activity.title}
+                                </li>
+                              ))}
+                            </ul>
+                            {dayActivities.length > 3 && (
+                              <p className='text-xs text-gray-500'>
+                                +{dayActivities.length - 3} more in Planner
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </TabsContent>
           <TabsContent value='itinerary'>
@@ -201,7 +343,19 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
             </div>
           </TabsContent>
           <TabsContent value='activities'>
-            <ItineraryActivities tripId={trip.id} />
+            <ItineraryActivities
+              tripId={trip.id}
+              startDate={trip.startDate.toISOString()}
+              endDate={trip.endDate.toISOString()}
+              locations={trip.locations.map((loc) => ({
+                id: loc.id,
+                locationTitle: loc.locationTitle,
+                latitude: loc.latitude,
+                longitude: loc.longitude,
+                order: loc.order,
+              }))}
+              hasLocations={hasLocations}
+            />
           </TabsContent>
           <TabsContent value='prayer'>
             <PrayerTimesPanel

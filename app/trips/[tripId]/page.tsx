@@ -2,7 +2,7 @@ import { getSession, fetchApiServer } from "@/lib/auth";
 import TripDetailClient, {
   type TripWithLocations,
 } from "@/components/trip-detail";
-import type { ApiTrip, ApiLocation } from "@/types/api";
+import type { ApiTrip, ApiLocation, ApiActivity } from "@/types/api";
 
 export default async function TripDetailPage({
   params,
@@ -20,11 +20,13 @@ export default async function TripDetailPage({
     );
   }
 
-  let trip: (ApiTrip & { locations: ApiLocation[] }) | null = null;
+  let trip:
+    | (ApiTrip & { locations: ApiLocation[]; activities: ApiActivity[] })
+    | null = null;
   try {
-    trip = await fetchApiServer<ApiTrip & { locations: ApiLocation[] }>(
-      `/api/trips/${tripId}`,
-    );
+    trip = await fetchApiServer<
+      ApiTrip & { locations: ApiLocation[]; activities: ApiActivity[] }
+    >(`/api/trips/${tripId}`);
   } catch {
     trip = null;
   }
@@ -45,6 +47,11 @@ export default async function TripDetailPage({
       ...loc,
       createAt: new Date(loc.createAt),
       updateAt: loc.updateAt ? new Date(loc.updateAt) : null,
+    })),
+    activities: trip.activities.map((activity) => ({
+      ...activity,
+      createAt: new Date(activity.createAt),
+      updateAt: activity.updateAt ? new Date(activity.updateAt) : null,
     })),
   } as TripWithLocations;
 
