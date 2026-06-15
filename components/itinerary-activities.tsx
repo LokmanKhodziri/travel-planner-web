@@ -30,6 +30,9 @@ interface PlannerDay {
   shortDate: string;
 }
 
+const DEFAULT_ACTIVITY_DURATION_MINUTES = 120;
+const PLANNER_DAY_START_HOUR = 9;
+
 function toDateKey(date: Date) {
   return date.toISOString().slice(0, 10);
 }
@@ -74,6 +77,33 @@ function timeOnly(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function addMinutes(date: Date, minutes: number) {
+  return new Date(date.getTime() + minutes * 60 * 1000);
+}
+
+function buildDateTime(dateKey: string, hour: number, minute = 0) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day, hour, minute);
+}
+
+function toDateTimeLocalValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hour}:${minute}`;
+}
+
+function timeRangesOverlap(
+  start: Date,
+  end: Date,
+  existingStart: Date,
+  existingEnd: Date,
+) {
+  return start < existingEnd && end > existingStart;
 }
 
 export default function ItineraryActivities({
@@ -145,13 +175,63 @@ export default function ItineraryActivities({
       .finally(() => setRecommendationsLoading(false));
   }, [tripId, hasLocations]);
 
-  function defaultRecommendationTime(placeId: string) {
-    return (
-      recommendationTimes[placeId] ?? {
-        startTime: `${selectedDate}T09:00`,
-        endTime: `${selectedDate}T11:00`,
-      }
+  function getActivitiesForDate(
+    dateKey: string,
+    activityList: ApiActivity[] = activities,
+  ) {
+    return activityList
+      .filter((activity) => activityDateKey(activity) === dateKey)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  }
+
+  function findOverlappingActivity(
+    start: Date,
+    end: Date,
+    activityList: ApiActivity[] = activities,
+  ) {
+    return activityList.find((activity) =>
+      timeRangesOverlap(
+        start,
+        end,
+        new Date(activity.startTime),
+        new Date(activity.endTime),
+      ),
     );
+  }
+
+  function findNextAvailableSlot(
+    dateKey = selectedDate,
+    activityList: ApiActivity[] = activities,
+    durationMinutes = DEFAULT_ACTIVITY_DURATION_MINUTES,
+  ) {
+    let cursor = buildDateTime(dateKey, PLANNER_DAY_START_HOUR);
+
+    for (const activity of getActivitiesForDate(dateKey, activityList)) {
+      const activityStart = new Date(activity.startTime);
+      const activityEnd = new Date(activity.endTime);
+      const candidateEnd = addMinutes(cursor, durationMinutes);
+
+      if (candidateEnd <= activityStart) break;
+      if (cursor < activityEnd) cursor = activityEnd;
+    }
+
+    return {
+      startTime: toDateTimeLocalValue(cursor),
+      endTime: toDateTimeLocalValue(addMinutes(cursor, durationMinutes)),
+    };
+  }
+
+  function showNextAvailableRecommendationTime(placeId: string) {
+    const nextSlot = findNextAvailableSlot();
+    setRecommendationTimes((prev) => ({
+      ...prev,
+      [placeId]: nextSlot,
+    }));
+    return nextSlot;
+  }
+
+  function defaultRecommendationTime(placeId: string) {
+    return recommendationTimes[placeId] ?? findNextAvailableSlot();
   }
 
   function updateRecommendationTime(
@@ -186,9 +266,25 @@ export default function ItineraryActivities({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const activityStartTime = startTime || `${selectedDate}T09:00`;
-    const activityEndTime = endTime || `${selectedDate}T11:00`;
+    const defaultSlot = findNextAvailableSlot();
+    const activityStartTime = startTime || defaultSlot.startTime;
+    const activityEndTime = endTime || defaultSlot.endTime;
     if (!title || !activityStartTime || !activityEndTime) return;
+
+    const start = new Date(activityStartTime);
+    const end = new Date(activityEndTime);
+    const overlappingActivity = findOverlappingActivity(start, end);
+    if (overlappingActivity) {
+      const nextSlot = findNextAvailableSlot();
+      setStartTime(nextSlot.startTime);
+      setEndTime(nextSlot.endTime);
+      setError(
+        `"${overlappingActivity.title}" already uses that time. Showing next available time: ${timeOnly(
+          nextSlot.startTime,
+        )} - ${timeOnly(nextSlot.endTime)}.`,
+      );
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
@@ -196,8 +292,8 @@ export default function ItineraryActivities({
       await createActivity({
         title,
         description: description || undefined,
-        startTime: new Date(activityStartTime).toISOString(),
-        endTime: new Date(activityEndTime).toISOString(),
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
       });
       setTitle("");
       setDescription("");
@@ -229,10 +325,21 @@ export default function ItineraryActivities({
       return;
     }
 
+    const overlappingActivity = findOverlappingActivity(start, end);
+    if (overlappingActivity) {
+      const nextSlot = showNextAvailableRecommendationTime(place.id);
+      setError(
+        `"${overlappingActivity.title}" already uses that time. Showing next available time: ${timeOnly(
+          nextSlot.startTime,
+        )} - ${timeOnly(nextSlot.endTime)}.`,
+      );
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     try {
-      await createActivity({
+      const created = await createActivity({
         title: place.name,
         description: [
           place.category ? `Category: ${place.category}` : null,
@@ -246,6 +353,14 @@ export default function ItineraryActivities({
         startTime: start.toISOString(),
         endTime: end.toISOString(),
       });
+      const nextSlot = findNextAvailableSlot(selectedDate, [
+        ...activities,
+        created,
+      ]);
+      setRecommendationTimes((prev) => ({
+        ...prev,
+        [place.id]: nextSlot,
+      }));
     } catch (err) {
       setError(
         err instanceof Error
@@ -306,6 +421,7 @@ export default function ItineraryActivities({
     {},
   );
   const selectedActivities = activitiesByDate[selectedDate] ?? [];
+  const nextAvailableActivityTime = findNextAvailableSlot();
   const unplannedActivities = activities.filter(
     (activity) => !plannerDays.some((day) => day.dateKey === activityDateKey(activity)),
   );
@@ -484,14 +600,14 @@ export default function ItineraryActivities({
           />
           <input
             type='datetime-local'
-            value={startTime || `${selectedDate}T09:00`}
+            value={startTime || nextAvailableActivityTime.startTime}
             onChange={(e) => setStartTime(e.target.value)}
             required
             className='border border-gray-300 rounded-lg p-3'
           />
           <input
             type='datetime-local'
-            value={endTime || `${selectedDate}T11:00`}
+            value={endTime || nextAvailableActivityTime.endTime}
             onChange={(e) => setEndTime(e.target.value)}
             required
             className='border border-gray-300 rounded-lg p-3'
@@ -586,6 +702,16 @@ export default function ItineraryActivities({
                     <div className='grid gap-3 lg:grid-cols-2'>
                       {filteredRecommendations.slice(0, 6).map((place) => {
                         const time = defaultRecommendationTime(place.id);
+                        const selectedStart = new Date(time.startTime);
+                        const selectedEnd = new Date(time.endTime);
+                        const overlappingActivity =
+                          Number.isNaN(selectedStart.getTime()) ||
+                          Number.isNaN(selectedEnd.getTime())
+                            ? null
+                            : findOverlappingActivity(selectedStart, selectedEnd);
+                        const nextAvailableTime = overlappingActivity
+                          ? findNextAvailableSlot()
+                          : null;
 
                         return (
                           <div
@@ -649,6 +775,14 @@ export default function ItineraryActivities({
                                 className='rounded-lg border border-gray-300 p-2 text-sm'
                               />
                             </div>
+                            {overlappingActivity && nextAvailableTime && (
+                              <p className='mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-700'>
+                                This time is unavailable because it overlaps
+                                with "{overlappingActivity.title}". Next
+                                available: {timeOnly(nextAvailableTime.startTime)}{" "}
+                                - {timeOnly(nextAvailableTime.endTime)}.
+                              </p>
+                            )}
                             <Button
                               type='button'
                               size='sm'
