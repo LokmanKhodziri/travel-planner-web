@@ -41,6 +41,9 @@ export interface ApiActivity {
   tripId: string;
   title: string;
   description: string | null;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   startTime: string;
   endTime: string;
   order: number;
@@ -89,6 +92,25 @@ export interface ActivityRecommendationsResponse {
   source: string;
   note: string;
   rows: ActivityRecommendationRow[];
+}
+
+export interface ActivityTravelTimeSegment {
+  fromActivityId: string;
+  fromTitle: string;
+  toActivityId: string;
+  toTitle: string;
+  estimate: {
+    distanceText: string;
+    distanceMeters: number;
+    durationText: string;
+    durationSeconds: number;
+  } | null;
+  error: string | null;
+}
+
+export interface ActivityTravelTimesResponse {
+  date: string | null;
+  segments: ActivityTravelTimeSegment[];
 }
 
 export interface PlaceSuggestion {

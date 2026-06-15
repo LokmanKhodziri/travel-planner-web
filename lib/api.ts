@@ -8,6 +8,7 @@ import type {
   NearbyPlace,
   PlaceSuggestion,
   ActivityRecommendationsResponse,
+  ActivityTravelTimesResponse,
 } from "@/types/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -111,6 +112,9 @@ export const api = {
       description?: string;
       startTime: string;
       endTime: string;
+      address?: string;
+      latitude?: number;
+      longitude?: number;
     },
   ) =>
     fetchApi<ApiActivity>(`/api/trips/${tripId}/activities`, {
@@ -123,6 +127,10 @@ export const api = {
       {
         method: "DELETE",
       },
+    ),
+  getActivityTravelTimes: (tripId: string, date: string) =>
+    fetchApi<ActivityTravelTimesResponse>(
+      `/api/trips/${tripId}/activities/travel-times?date=${encodeURIComponent(date)}`,
     ),
 };
 

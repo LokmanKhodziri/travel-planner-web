@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type {
   ActivityRecommendationsResponse,
+  ActivityTravelTimeSegment,
   ApiActivity,
   ApiLocation,
   NearbyPlace,
@@ -29,6 +30,9 @@ interface PlannerDay {
   label: string;
   shortDate: string;
 }
+
+const DEFAULT_ACTIVITY_DURATION_MINUTES = 120;
+const PLANNER_DAY_START_HOUR = 9;
 
 function toDateKey(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -76,6 +80,33 @@ function timeOnly(value: string) {
   });
 }
 
+function addMinutes(date: Date, minutes: number) {
+  return new Date(date.getTime() + minutes * 60 * 1000);
+}
+
+function buildDateTime(dateKey: string, hour: number, minute = 0) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day, hour, minute);
+}
+
+function toDateTimeLocalValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hour}:${minute}`;
+}
+
+function timeRangesOverlap(
+  start: Date,
+  end: Date,
+  existingStart: Date,
+  existingEnd: Date,
+) {
+  return start < existingEnd && end > existingStart;
+}
+
 export default function ItineraryActivities({
   tripId,
   startDate,
@@ -89,6 +120,11 @@ export default function ItineraryActivities({
   const [activities, setActivities] = useState<ApiActivity[]>([]);
   const [recommendations, setRecommendations] =
     useState<ActivityRecommendationsResponse | null>(null);
+  const [travelTimeSegments, setTravelTimeSegments] = useState<
+    ActivityTravelTimeSegment[]
+  >([]);
+  const [travelTimesLoading, setTravelTimesLoading] = useState(false);
+  const [travelTimesError, setTravelTimesError] = useState<string | null>(null);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState(firstPlannerDate);
   const [activeRecommendationCategory, setActiveRecommendationCategory] =
@@ -145,13 +181,85 @@ export default function ItineraryActivities({
       .finally(() => setRecommendationsLoading(false));
   }, [tripId, hasLocations]);
 
-  function defaultRecommendationTime(placeId: string) {
-    return (
-      recommendationTimes[placeId] ?? {
-        startTime: `${selectedDate}T09:00`,
-        endTime: `${selectedDate}T11:00`,
-      }
+  useEffect(() => {
+    const dayActivities = getActivitiesForDate(selectedDate);
+    if (dayActivities.length < 2) {
+      setTravelTimeSegments([]);
+      setTravelTimesError(null);
+      return;
+    }
+
+    setTravelTimesLoading(true);
+    setTravelTimesError(null);
+    api
+      .getActivityTravelTimes(tripId, selectedDate)
+      .then((response) => setTravelTimeSegments(response.segments))
+      .catch((err) => {
+        setTravelTimeSegments([]);
+        setTravelTimesError(
+          err instanceof Error ? err.message : "Failed to load travel times",
+        );
+      })
+      .finally(() => setTravelTimesLoading(false));
+  }, [tripId, selectedDate, activities]);
+
+  function getActivitiesForDate(
+    dateKey: string,
+    activityList: ApiActivity[] = activities,
+  ) {
+    return activityList
+      .filter((activity) => activityDateKey(activity) === dateKey)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  }
+
+  function findOverlappingActivity(
+    start: Date,
+    end: Date,
+    activityList: ApiActivity[] = activities,
+  ) {
+    return activityList.find((activity) =>
+      timeRangesOverlap(
+        start,
+        end,
+        new Date(activity.startTime),
+        new Date(activity.endTime),
+      ),
     );
+  }
+
+  function findNextAvailableSlot(
+    dateKey = selectedDate,
+    activityList: ApiActivity[] = activities,
+    durationMinutes = DEFAULT_ACTIVITY_DURATION_MINUTES,
+  ) {
+    let cursor = buildDateTime(dateKey, PLANNER_DAY_START_HOUR);
+
+    for (const activity of getActivitiesForDate(dateKey, activityList)) {
+      const activityStart = new Date(activity.startTime);
+      const activityEnd = new Date(activity.endTime);
+      const candidateEnd = addMinutes(cursor, durationMinutes);
+
+      if (candidateEnd <= activityStart) break;
+      if (cursor < activityEnd) cursor = activityEnd;
+    }
+
+    return {
+      startTime: toDateTimeLocalValue(cursor),
+      endTime: toDateTimeLocalValue(addMinutes(cursor, durationMinutes)),
+    };
+  }
+
+  function showNextAvailableRecommendationTime(placeId: string) {
+    const nextSlot = findNextAvailableSlot();
+    setRecommendationTimes((prev) => ({
+      ...prev,
+      [placeId]: nextSlot,
+    }));
+    return nextSlot;
+  }
+
+  function defaultRecommendationTime(placeId: string) {
+    return recommendationTimes[placeId] ?? findNextAvailableSlot();
   }
 
   function updateRecommendationTime(
@@ -174,6 +282,9 @@ export default function ItineraryActivities({
     description?: string;
     startTime: string;
     endTime: string;
+    address?: string;
+    latitude?: number;
+    longitude?: number;
   }) {
     const created = await api.createActivity(tripId, body);
     setActivities((prev) =>
@@ -186,9 +297,25 @@ export default function ItineraryActivities({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const activityStartTime = startTime || `${selectedDate}T09:00`;
-    const activityEndTime = endTime || `${selectedDate}T11:00`;
+    const defaultSlot = findNextAvailableSlot();
+    const activityStartTime = startTime || defaultSlot.startTime;
+    const activityEndTime = endTime || defaultSlot.endTime;
     if (!title || !activityStartTime || !activityEndTime) return;
+
+    const start = new Date(activityStartTime);
+    const end = new Date(activityEndTime);
+    const overlappingActivity = findOverlappingActivity(start, end);
+    if (overlappingActivity) {
+      const nextSlot = findNextAvailableSlot();
+      setStartTime(nextSlot.startTime);
+      setEndTime(nextSlot.endTime);
+      setError(
+        `"${overlappingActivity.title}" already uses that time. Showing next available time: ${timeOnly(
+          nextSlot.startTime,
+        )} - ${timeOnly(nextSlot.endTime)}.`,
+      );
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
@@ -196,8 +323,8 @@ export default function ItineraryActivities({
       await createActivity({
         title,
         description: description || undefined,
-        startTime: new Date(activityStartTime).toISOString(),
-        endTime: new Date(activityEndTime).toISOString(),
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
       });
       setTitle("");
       setDescription("");
@@ -229,10 +356,21 @@ export default function ItineraryActivities({
       return;
     }
 
+    const overlappingActivity = findOverlappingActivity(start, end);
+    if (overlappingActivity) {
+      const nextSlot = showNextAvailableRecommendationTime(place.id);
+      setError(
+        `"${overlappingActivity.title}" already uses that time. Showing next available time: ${timeOnly(
+          nextSlot.startTime,
+        )} - ${timeOnly(nextSlot.endTime)}.`,
+      );
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     try {
-      await createActivity({
+      const created = await createActivity({
         title: place.name,
         description: [
           place.category ? `Category: ${place.category}` : null,
@@ -243,9 +381,20 @@ export default function ItineraryActivities({
         ]
           .filter(Boolean)
           .join(" · "),
+        address: place.address || undefined,
+        latitude: place.latitude,
+        longitude: place.longitude,
         startTime: start.toISOString(),
         endTime: end.toISOString(),
       });
+      const nextSlot = findNextAvailableSlot(selectedDate, [
+        ...activities,
+        created,
+      ]);
+      setRecommendationTimes((prev) => ({
+        ...prev,
+        [place.id]: nextSlot,
+      }));
     } catch (err) {
       setError(
         err instanceof Error
@@ -306,6 +455,10 @@ export default function ItineraryActivities({
     {},
   );
   const selectedActivities = activitiesByDate[selectedDate] ?? [];
+  const nextAvailableActivityTime = findNextAvailableSlot();
+  const travelTimeByFromActivity = new Map(
+    travelTimeSegments.map((segment) => [segment.fromActivityId, segment]),
+  );
   const unplannedActivities = activities.filter(
     (activity) => !plannerDays.some((day) => day.dateKey === activityDateKey(activity)),
   );
@@ -387,40 +540,69 @@ export default function ItineraryActivities({
             </div>
           ) : (
             <ol className='space-y-3'>
-              {selectedActivities.map((activity, index) => (
-                <li
-                  key={activity.id}
-                  className='relative rounded-lg border border-gray-200 bg-gray-50 p-4 pl-16'
-                >
-                  <div className='absolute left-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white'>
-                    {index + 1}
-                  </div>
-                  <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
-                    <div>
-                      <p className='font-semibold text-gray-900'>
-                        {activity.title}
-                      </p>
-                      {activity.description && (
-                        <p className='mt-1 text-sm text-gray-600'>
-                          {activity.description}
-                        </p>
-                      )}
-                      <p className='mt-2 flex items-center gap-2 text-sm text-gray-500'>
-                        <Clock className='h-4 w-4' />
-                        {timeOnly(activity.startTime)} -{" "}
-                        {timeOnly(activity.endTime)}
-                      </p>
-                    </div>
-                    <Button
-                      variant='destructive'
-                      size='sm'
-                      onClick={() => handleDelete(activity.id, activity.title)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </li>
-              ))}
+              {selectedActivities.map((activity, index) => {
+                const travelSegment = travelTimeByFromActivity.get(activity.id);
+                const hasNextActivity = index < selectedActivities.length - 1;
+
+                return (
+                  <Fragment key={activity.id}>
+                    <li className='relative rounded-lg border border-gray-200 bg-gray-50 p-4 pl-16'>
+                      <div className='absolute left-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white'>
+                        {index + 1}
+                      </div>
+                      <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
+                        <div>
+                          <p className='font-semibold text-gray-900'>
+                            {activity.title}
+                          </p>
+                          {activity.description && (
+                            <p className='mt-1 text-sm text-gray-600'>
+                              {activity.description}
+                            </p>
+                          )}
+                          <p className='mt-2 flex items-center gap-2 text-sm text-gray-500'>
+                            <Clock className='h-4 w-4' />
+                            {timeOnly(activity.startTime)} -{" "}
+                            {timeOnly(activity.endTime)}
+                          </p>
+                          {activity.latitude == null ||
+                          activity.longitude == null ? (
+                            <p className='mt-2 text-xs text-amber-700'>
+                              No coordinates saved for travel-time estimates.
+                            </p>
+                          ) : null}
+                        </div>
+                        <Button
+                          variant='destructive'
+                          size='sm'
+                          onClick={() => handleDelete(activity.id, activity.title)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </li>
+                    {hasNextActivity && (
+                      <li className='ml-16 rounded-lg border border-dashed border-blue-200 bg-blue-50/60 p-3 text-sm text-blue-800'>
+                        {travelTimesLoading ? (
+                          <span>Calculating travel time to next activity...</span>
+                        ) : travelSegment?.estimate ? (
+                          <span>
+                            Travel to {travelSegment.toTitle}:{" "}
+                            <strong>{travelSegment.estimate.durationText}</strong>{" "}
+                            by car ({travelSegment.estimate.distanceText})
+                          </span>
+                        ) : travelSegment?.error ? (
+                          <span>{travelSegment.error}</span>
+                        ) : travelTimesError ? (
+                          <span>{travelTimesError}</span>
+                        ) : (
+                          <span>Travel time unavailable for this segment.</span>
+                        )}
+                      </li>
+                    )}
+                  </Fragment>
+                );
+              })}
             </ol>
           )}
         </div>
@@ -484,14 +666,14 @@ export default function ItineraryActivities({
           />
           <input
             type='datetime-local'
-            value={startTime || `${selectedDate}T09:00`}
+            value={startTime || nextAvailableActivityTime.startTime}
             onChange={(e) => setStartTime(e.target.value)}
             required
             className='border border-gray-300 rounded-lg p-3'
           />
           <input
             type='datetime-local'
-            value={endTime || `${selectedDate}T11:00`}
+            value={endTime || nextAvailableActivityTime.endTime}
             onChange={(e) => setEndTime(e.target.value)}
             required
             className='border border-gray-300 rounded-lg p-3'
@@ -586,6 +768,16 @@ export default function ItineraryActivities({
                     <div className='grid gap-3 lg:grid-cols-2'>
                       {filteredRecommendations.slice(0, 6).map((place) => {
                         const time = defaultRecommendationTime(place.id);
+                        const selectedStart = new Date(time.startTime);
+                        const selectedEnd = new Date(time.endTime);
+                        const overlappingActivity =
+                          Number.isNaN(selectedStart.getTime()) ||
+                          Number.isNaN(selectedEnd.getTime())
+                            ? null
+                            : findOverlappingActivity(selectedStart, selectedEnd);
+                        const nextAvailableTime = overlappingActivity
+                          ? findNextAvailableSlot()
+                          : null;
 
                         return (
                           <div
@@ -649,6 +841,14 @@ export default function ItineraryActivities({
                                 className='rounded-lg border border-gray-300 p-2 text-sm'
                               />
                             </div>
+                            {overlappingActivity && nextAvailableTime && (
+                              <p className='mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-700'>
+                                This time is unavailable because it overlaps
+                                with "{overlappingActivity.title}". Next
+                                available: {timeOnly(nextAvailableTime.startTime)}{" "}
+                                - {timeOnly(nextAvailableTime.endTime)}.
+                              </p>
+                            )}
                             <Button
                               type='button'
                               size='sm'
