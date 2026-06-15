@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type {
   ActivityRecommendationsResponse,
+  ActivityTravelTimeSegment,
   ApiActivity,
   ApiLocation,
   NearbyPlace,
@@ -119,6 +120,11 @@ export default function ItineraryActivities({
   const [activities, setActivities] = useState<ApiActivity[]>([]);
   const [recommendations, setRecommendations] =
     useState<ActivityRecommendationsResponse | null>(null);
+  const [travelTimeSegments, setTravelTimeSegments] = useState<
+    ActivityTravelTimeSegment[]
+  >([]);
+  const [travelTimesLoading, setTravelTimesLoading] = useState(false);
+  const [travelTimesError, setTravelTimesError] = useState<string | null>(null);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState(firstPlannerDate);
   const [activeRecommendationCategory, setActiveRecommendationCategory] =
@@ -174,6 +180,28 @@ export default function ItineraryActivities({
       )
       .finally(() => setRecommendationsLoading(false));
   }, [tripId, hasLocations]);
+
+  useEffect(() => {
+    const dayActivities = getActivitiesForDate(selectedDate);
+    if (dayActivities.length < 2) {
+      setTravelTimeSegments([]);
+      setTravelTimesError(null);
+      return;
+    }
+
+    setTravelTimesLoading(true);
+    setTravelTimesError(null);
+    api
+      .getActivityTravelTimes(tripId, selectedDate)
+      .then((response) => setTravelTimeSegments(response.segments))
+      .catch((err) => {
+        setTravelTimeSegments([]);
+        setTravelTimesError(
+          err instanceof Error ? err.message : "Failed to load travel times",
+        );
+      })
+      .finally(() => setTravelTimesLoading(false));
+  }, [tripId, selectedDate, activities]);
 
   function getActivitiesForDate(
     dateKey: string,
@@ -254,6 +282,9 @@ export default function ItineraryActivities({
     description?: string;
     startTime: string;
     endTime: string;
+    address?: string;
+    latitude?: number;
+    longitude?: number;
   }) {
     const created = await api.createActivity(tripId, body);
     setActivities((prev) =>
@@ -350,6 +381,9 @@ export default function ItineraryActivities({
         ]
           .filter(Boolean)
           .join(" · "),
+        address: place.address || undefined,
+        latitude: place.latitude,
+        longitude: place.longitude,
         startTime: start.toISOString(),
         endTime: end.toISOString(),
       });
@@ -422,6 +456,9 @@ export default function ItineraryActivities({
   );
   const selectedActivities = activitiesByDate[selectedDate] ?? [];
   const nextAvailableActivityTime = findNextAvailableSlot();
+  const travelTimeByFromActivity = new Map(
+    travelTimeSegments.map((segment) => [segment.fromActivityId, segment]),
+  );
   const unplannedActivities = activities.filter(
     (activity) => !plannerDays.some((day) => day.dateKey === activityDateKey(activity)),
   );
@@ -503,40 +540,69 @@ export default function ItineraryActivities({
             </div>
           ) : (
             <ol className='space-y-3'>
-              {selectedActivities.map((activity, index) => (
-                <li
-                  key={activity.id}
-                  className='relative rounded-lg border border-gray-200 bg-gray-50 p-4 pl-16'
-                >
-                  <div className='absolute left-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white'>
-                    {index + 1}
-                  </div>
-                  <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
-                    <div>
-                      <p className='font-semibold text-gray-900'>
-                        {activity.title}
-                      </p>
-                      {activity.description && (
-                        <p className='mt-1 text-sm text-gray-600'>
-                          {activity.description}
-                        </p>
-                      )}
-                      <p className='mt-2 flex items-center gap-2 text-sm text-gray-500'>
-                        <Clock className='h-4 w-4' />
-                        {timeOnly(activity.startTime)} -{" "}
-                        {timeOnly(activity.endTime)}
-                      </p>
-                    </div>
-                    <Button
-                      variant='destructive'
-                      size='sm'
-                      onClick={() => handleDelete(activity.id, activity.title)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </li>
-              ))}
+              {selectedActivities.map((activity, index) => {
+                const travelSegment = travelTimeByFromActivity.get(activity.id);
+                const hasNextActivity = index < selectedActivities.length - 1;
+
+                return (
+                  <Fragment key={activity.id}>
+                    <li className='relative rounded-lg border border-gray-200 bg-gray-50 p-4 pl-16'>
+                      <div className='absolute left-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white'>
+                        {index + 1}
+                      </div>
+                      <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
+                        <div>
+                          <p className='font-semibold text-gray-900'>
+                            {activity.title}
+                          </p>
+                          {activity.description && (
+                            <p className='mt-1 text-sm text-gray-600'>
+                              {activity.description}
+                            </p>
+                          )}
+                          <p className='mt-2 flex items-center gap-2 text-sm text-gray-500'>
+                            <Clock className='h-4 w-4' />
+                            {timeOnly(activity.startTime)} -{" "}
+                            {timeOnly(activity.endTime)}
+                          </p>
+                          {activity.latitude == null ||
+                          activity.longitude == null ? (
+                            <p className='mt-2 text-xs text-amber-700'>
+                              No coordinates saved for travel-time estimates.
+                            </p>
+                          ) : null}
+                        </div>
+                        <Button
+                          variant='destructive'
+                          size='sm'
+                          onClick={() => handleDelete(activity.id, activity.title)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </li>
+                    {hasNextActivity && (
+                      <li className='ml-16 rounded-lg border border-dashed border-blue-200 bg-blue-50/60 p-3 text-sm text-blue-800'>
+                        {travelTimesLoading ? (
+                          <span>Calculating travel time to next activity...</span>
+                        ) : travelSegment?.estimate ? (
+                          <span>
+                            Travel to {travelSegment.toTitle}:{" "}
+                            <strong>{travelSegment.estimate.durationText}</strong>{" "}
+                            by car ({travelSegment.estimate.distanceText})
+                          </span>
+                        ) : travelSegment?.error ? (
+                          <span>{travelSegment.error}</span>
+                        ) : travelTimesError ? (
+                          <span>{travelTimesError}</span>
+                        ) : (
+                          <span>Travel time unavailable for this segment.</span>
+                        )}
+                      </li>
+                    )}
+                  </Fragment>
+                );
+              })}
             </ol>
           )}
         </div>
