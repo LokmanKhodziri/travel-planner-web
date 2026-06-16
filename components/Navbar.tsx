@@ -5,6 +5,7 @@ import { getToken } from "@/lib/api";
 import type { ApiUser } from "@/types/api";
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
@@ -51,13 +52,28 @@ export default function Navbar({ session }: { session: ApiUser | null }) {
     setSessionState(null);
   }
 
+  const isLoggedIn = isClient ? !!sessionState : !!session;
+  const brandHref = isLoggedIn ? "/dashboard" : "/";
+  const pathname = usePathname();
+
+  const navLinkClass = (href: string) =>
+    pathname === href || pathname.startsWith(`${href}/`)
+      ? "font-semibold text-sky-600"
+      : "text-slate-900 hover:text-sky-500";
+
   return (
     <nav className='bg-white shadow-md py-4 border-b border-gray-200'>
       <div className='container mx-auto px-6 lg:px-8'>
         <div className='flex items-center justify-between gap-4'>
-          <Link href='/' className='flex items-center gap-3'>
+          <Link href={brandHref} className='flex items-center gap-3'>
             <Image src='/logo.png' alt='logo' width={50} height={50} />
-            <span className='text-xl font-bold text-gray-800 md:text-2xl'>
+            <span
+              className={`text-xl font-bold md:text-2xl ${
+                pathname === "/dashboard"
+                  ? "text-sky-600"
+                  : "text-gray-800"
+              }`}
+            >
               Travel Planner
             </span>
           </Link>
@@ -75,23 +91,14 @@ export default function Navbar({ session }: { session: ApiUser | null }) {
             <div className='hidden md:flex items-center gap-4'>
               {isClient && sessionState ? (
                 <>
-                  <Link
-                    href='/trips'
-                    className='text-slate-900 hover:text-sky-500'
-                  >
+                  <Link href='/trips' className={navLinkClass("/trips")}>
                     My Trips
                   </Link>
-                  <Link
-                    href='/globe'
-                    className='text-slate-900 hover:text-sky-500'
-                  >
+                  <Link href='/globe' className={navLinkClass("/globe")}>
                     Globe
                   </Link>
                   {sessionState.role === "ADMIN" && (
-                    <Link
-                      href='/admin'
-                      className='text-slate-900 hover:text-sky-500'
-                    >
+                    <Link href='/admin' className={navLinkClass("/admin")}>
                       Admin
                     </Link>
                   )}
@@ -118,14 +125,14 @@ export default function Navbar({ session }: { session: ApiUser | null }) {
           <div className='mt-4 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm md:hidden'>
             <Link
               href='/trips'
-              className='text-slate-900 hover:text-sky-500'
+              className={navLinkClass("/trips")}
               onClick={() => setMenuOpen(false)}
             >
               My Trips
             </Link>
             <Link
               href='/globe'
-              className='text-slate-900 hover:text-sky-500'
+              className={navLinkClass("/globe")}
               onClick={() => setMenuOpen(false)}
             >
               Globe
@@ -133,7 +140,7 @@ export default function Navbar({ session }: { session: ApiUser | null }) {
             {sessionState.role === "ADMIN" && (
               <Link
                 href='/admin'
-                className='text-slate-900 hover:text-sky-500'
+                className={navLinkClass("/admin")}
                 onClick={() => setMenuOpen(false)}
               >
                 Admin

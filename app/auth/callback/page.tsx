@@ -17,7 +17,7 @@ export default function AuthCallbackPage() {
     }
     document.cookie = `${JWT_COOKIE}=${encodeURIComponent(token)}; path=/; max-age=${60 * 60 * 24 * 7}`;
     setStatus("done");
-    window.location.href = "/trips";
+    window.location.href = "/dashboard";
   }, [searchParams]);
 
   if (status === "error") {

@@ -36,12 +36,12 @@ async function emailAuth(
 
 export async function signInWithEmail(email: string, password: string) {
   await emailAuth("/auth/login", { email, password });
-  window.location.href = "/trips";
+  window.location.href = "/dashboard";
 }
 
 export async function signUpWithEmail(name: string, email: string, password: string) {
   await emailAuth("/auth/signup", { name, email, password });
-  window.location.href = "/trips";
+  window.location.href = "/dashboard";
 }
 
 export function loginWithGoogle() {
