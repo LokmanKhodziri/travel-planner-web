@@ -9,6 +9,7 @@ import type {
   PlaceSuggestion,
   ActivityRecommendationsResponse,
   ActivityTravelTimesResponse,
+  TravelMode,
 } from "@/types/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -158,9 +159,13 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
-  getActivityTravelTimes: (tripId: string, date: string) =>
+  getActivityTravelTimes: (
+    tripId: string,
+    date: string,
+    mode: TravelMode = "driving",
+  ) =>
     fetchApi<ActivityTravelTimesResponse>(
-      `/api/trips/${tripId}/activities/travel-times?date=${encodeURIComponent(date)}`,
+      `/api/trips/${tripId}/activities/travel-times?date=${encodeURIComponent(date)}&mode=${encodeURIComponent(mode)}`,
     ),
 };
 

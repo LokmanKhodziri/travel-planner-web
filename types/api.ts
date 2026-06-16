@@ -95,6 +95,8 @@ export interface ActivityRecommendationsResponse {
   rows: ActivityRecommendationRow[];
 }
 
+export type TravelMode = "walking" | "driving" | "transit";
+
 export interface ActivityTravelTimeSegment {
   fromActivityId: string;
   fromTitle: string;
@@ -105,12 +107,16 @@ export interface ActivityTravelTimeSegment {
     distanceMeters: number;
     durationText: string;
     durationSeconds: number;
+    mode: TravelMode;
+    modeLabel: string;
+    autoWalk: boolean;
   } | null;
   error: string | null;
 }
 
 export interface ActivityTravelTimesResponse {
   date: string | null;
+  mode?: TravelMode;
   segments: ActivityTravelTimeSegment[];
 }
 

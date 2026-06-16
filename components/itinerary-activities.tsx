@@ -10,12 +10,19 @@ import type {
   NearbyPlace,
   PlaceSuggestion,
   PrayerTimings,
+  TravelMode,
 } from "@/types/api";
 import { formatDateTime } from "@/lib/utils";
 import { computeTravelAdjustedSchedule } from "@/lib/planner-schedule";
+import {
+  getStoredTravelMode,
+  storeTravelMode,
+  TRAVEL_MODE_OPTIONS,
+  travelModeLabel,
+} from "@/lib/travel-modes";
 import { Button } from "./ui/button";
 import PlannerStretchTimeline from "./planner-stretch-timeline";
-import { CalendarDays, Car, MapPin, Sparkles } from "lucide-react";
+import { CalendarDays, MapPin, Route, Sparkles } from "lucide-react";
 
 interface ItineraryActivitiesProps {
   tripId: string;
@@ -188,6 +195,7 @@ export default function ItineraryActivities({
   const [prayerTimesLoading, setPrayerTimesLoading] = useState(false);
   const [prayerTimesError, setPrayerTimesError] = useState<string | null>(null);
   const [showPrayerTimes, setShowPrayerTimes] = useState(true);
+  const [travelMode, setTravelMode] = useState<TravelMode>("driving");
   const [error, setError] = useState<string | null>(null);
   const addressDebounceRef = useRef<number | null>(null);
 
@@ -203,6 +211,10 @@ export default function ItineraryActivities({
       )
       .finally(() => setLoading(false));
   };
+
+  useEffect(() => {
+    setTravelMode(getStoredTravelMode());
+  }, []);
 
   useEffect(() => {
     loadActivities();
@@ -274,7 +286,7 @@ export default function ItineraryActivities({
     setTravelTimesLoading(true);
     setTravelTimesError(null);
     api
-      .getActivityTravelTimes(tripId, selectedDate)
+      .getActivityTravelTimes(tripId, selectedDate, travelMode)
       .then((response) => setTravelTimeSegments(response.segments))
       .catch((err) => {
         setTravelTimeSegments([]);
@@ -283,7 +295,12 @@ export default function ItineraryActivities({
         );
       })
       .finally(() => setTravelTimesLoading(false));
-  }, [tripId, selectedDate, activities]);
+  }, [tripId, selectedDate, activities, travelMode]);
+
+  function handleTravelModeChange(mode: TravelMode) {
+    setTravelMode(mode);
+    storeTravelMode(mode);
+  }
 
   useEffect(() => {
     if (!hasLocations) {
@@ -620,7 +637,7 @@ export default function ItineraryActivities({
 
     if (updates.length === 0) {
       setScheduleNotice(
-        "Schedule already leaves room for travel, or driving estimates are unavailable.",
+        "Schedule already leaves room for travel, or travel estimates are unavailable.",
       );
       return;
     }
@@ -633,7 +650,7 @@ export default function ItineraryActivities({
       .join("\n");
 
     const confirmed = window.confirm(
-      `Shift ${updates.length} later activit${updates.length === 1 ? "y" : "ies"} to include driving time between stops?\n\n${summary}`,
+      `Shift ${updates.length} later activit${updates.length === 1 ? "y" : "ies"} to include ${travelModeLabel(travelMode).toLowerCase()} time between stops?\n\n${summary}`,
     );
     if (!confirmed) return;
 
@@ -871,31 +888,50 @@ export default function ItineraryActivities({
                 {prayerTimes ? ` · ${prayerTimes.timezone}` : ""}
               </p>
               <p className='mt-1 text-xs text-gray-500'>
-                Activities in the center, drive gaps between them, prayer times in
-                the Salah column on the right.
+                Activities stack in order with travel info on each card. Nearby
+                stops automatically use walking. Prayer times appear on the
+                right.
               </p>
             </div>
             <div className='flex flex-wrap items-center gap-3'>
               {selectedActivities.length >= 2 && (
-                <Button
-                  type='button'
-                  variant='outline'
-                  size='sm'
-                  className='gap-2'
-                  disabled={
-                    syncingSchedule ||
-                    travelTimesLoading ||
-                    pendingTravelAdjustments.length === 0
-                  }
-                  onClick={handleSyncScheduleWithTravel}
-                >
-                  <Car className='h-4 w-4' />
-                  {syncingSchedule
-                    ? "Adjusting..."
-                    : pendingTravelAdjustments.length > 0
-                      ? `Add travel gaps (${pendingTravelAdjustments.length})`
-                      : "Travel gaps applied"}
-                </Button>
+                <>
+                  <label className='flex items-center gap-2 text-xs font-medium text-gray-600'>
+                    <span className='hidden sm:inline'>Travel by</span>
+                    <select
+                      value={travelMode}
+                      onChange={(e) =>
+                        handleTravelModeChange(e.target.value as TravelMode)
+                      }
+                      className='rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs'
+                    >
+                      {TRAVEL_MODE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    className='gap-2'
+                    disabled={
+                      syncingSchedule ||
+                      travelTimesLoading ||
+                      pendingTravelAdjustments.length === 0
+                    }
+                    onClick={handleSyncScheduleWithTravel}
+                  >
+                    <Route className='h-4 w-4' />
+                    {syncingSchedule
+                      ? "Adjusting..."
+                      : pendingTravelAdjustments.length > 0
+                        ? `Add travel gaps (${pendingTravelAdjustments.length})`
+                        : "Travel gaps applied"}
+                  </Button>
+                </>
               )}
               {hasLocations && (
                 <label className='flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800'>
