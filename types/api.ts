@@ -52,6 +52,28 @@ export interface ApiActivity {
   syncedLocation?: ApiLocation | null;
 }
 
+export type ExpenseCategory =
+  | "TRANSPORT"
+  | "ACCOMMODATION"
+  | "FOOD"
+  | "ACTIVITIES"
+  | "SHOPPING"
+  | "OTHER";
+
+export interface ApiExpense {
+  id: string;
+  tripId: string;
+  title: string;
+  amount: number;
+  currency: string;
+  category: ExpenseCategory;
+  expenseDate: string;
+  notes: string | null;
+  activityId: string | null;
+  createAt: string;
+  updateAt: string | null;
+}
+
 export interface PrayerTimings {
   date: string;
   timezone: string;

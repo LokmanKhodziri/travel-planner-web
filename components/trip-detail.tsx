@@ -13,6 +13,7 @@ import SortableItinerary from "./sortable-itinerary";
 import PrayerTimesPanel from "./prayer-times-panel";
 import NearbyPlacesPanel from "./nearby-places-panel";
 import ItineraryActivities from "./itinerary-activities";
+import TripExpensesPanel from "./trip-expenses-panel";
 import { formatDate } from "@/lib/utils";
 import { api } from "@/lib/api";
 
@@ -99,6 +100,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
       "overview",
       "itinerary",
       "activities",
+      "expenses",
       "prayer",
       "nearby",
       "map",
@@ -263,6 +265,12 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
               className='text-sm font-semibold whitespace-nowrap'
             >
               Planner
+            </TabsTrigger>
+            <TabsTrigger
+              value='expenses'
+              className='text-sm font-semibold whitespace-nowrap'
+            >
+              Expenses
             </TabsTrigger>
             <TabsTrigger
               value='prayer'
@@ -457,6 +465,18 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
               }))}
               hasLocations={hasLocations}
               onLocationAdded={handleLocationAdded}
+            />
+          </TabsContent>
+          <TabsContent value='expenses'>
+            <TripExpensesPanel
+              tripId={trip.id}
+              startDate={trip.startDate.toISOString()}
+              endDate={trip.endDate.toISOString()}
+              activities={tripActivities.map((activity) => ({
+                id: activity.id,
+                title: activity.title,
+                startTime: activity.startTime,
+              }))}
             />
           </TabsContent>
           <TabsContent value='prayer'>

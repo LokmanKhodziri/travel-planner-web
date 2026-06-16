@@ -9,6 +9,8 @@ import type {
   PlaceSuggestion,
   ActivityRecommendationsResponse,
   ActivityTravelTimesResponse,
+  ApiExpense,
+  ExpenseCategory,
   TravelMode,
 } from "@/types/api";
 
@@ -166,6 +168,29 @@ export const api = {
   ) =>
     fetchApi<ActivityTravelTimesResponse>(
       `/api/trips/${tripId}/activities/travel-times?date=${encodeURIComponent(date)}&mode=${encodeURIComponent(mode)}`,
+    ),
+  getExpenses: (tripId: string) =>
+    fetchApi<ApiExpense[]>(`/api/trips/${tripId}/expenses`),
+  createExpense: (
+    tripId: string,
+    body: {
+      title: string;
+      amount: number;
+      currency?: string;
+      category: ExpenseCategory;
+      expenseDate: string;
+      notes?: string;
+      activityId?: string;
+    },
+  ) =>
+    fetchApi<ApiExpense>(`/api/trips/${tripId}/expenses`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  deleteExpense: (tripId: string, expenseId: string) =>
+    fetchApi<{ success: boolean }>(
+      `/api/trips/${tripId}/expenses/${expenseId}`,
+      { method: "DELETE" },
     ),
 };
 
