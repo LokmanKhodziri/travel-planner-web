@@ -49,6 +49,7 @@ export interface ApiActivity {
   order: number;
   createAt: string;
   updateAt: string | null;
+  syncedLocation?: ApiLocation | null;
 }
 
 export interface PrayerTimings {

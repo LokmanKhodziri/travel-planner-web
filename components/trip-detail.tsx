@@ -14,6 +14,7 @@ import PrayerTimesPanel from "./prayer-times-panel";
 import NearbyPlacesPanel from "./nearby-places-panel";
 import ItineraryActivities from "./itinerary-activities";
 import { formatDate } from "@/lib/utils";
+import { api } from "@/lib/api";
 
 type TripActivity = Omit<ApiActivity, "createAt" | "updateAt"> & {
   createAt: Date;
@@ -90,6 +91,7 @@ function timeOnly(value: string) {
 export default function TripDetailClient({ trip }: TripDetailClientProps) {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState("overview");
+  const [tripLocations, setTripLocations] = useState(trip.locations);
 
   useEffect(() => {
     const tab = searchParams.get("tab");
@@ -105,7 +107,89 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
       setActiveTab(tab);
     }
   }, [searchParams]);
-  const hasLocations = trip.locations.length > 0;
+
+  const handleLocationAdded = (location: ApiLocation) => {
+    setTripLocations((prev) => {
+      if (prev.some((item) => item.id === location.id)) return prev;
+      return [
+        ...prev,
+        {
+          ...location,
+          createAt: new Date(location.createAt),
+          updateAt: location.updateAt ? new Date(location.updateAt) : null,
+        },
+      ].sort((a, b) => a.order - b.order);
+    });
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const applyLocations = (locations: ApiLocation[]) => {
+      if (cancelled) return;
+      setTripLocations(
+        locations.map((location) => ({
+          ...location,
+          createAt: new Date(location.createAt),
+          updateAt: location.updateAt ? new Date(location.updateAt) : null,
+        })),
+      );
+    };
+
+    const fallbackSyncFromActivities = async () => {
+      const activities = trip.activities ?? [];
+      if (activities.length === 0) return;
+
+      let merged = [...trip.locations];
+      for (const activity of activities) {
+        const hasCoords =
+          activity.latitude != null && activity.longitude != null;
+        const hasAddress = Boolean(activity.address?.trim());
+        if (!hasCoords && !hasAddress) continue;
+
+        try {
+          const location = await api.addLocation(
+            trip.id,
+            activity.address?.trim() || activity.title,
+            {
+              locationTitle: activity.title,
+              latitude: hasCoords ? activity.latitude! : undefined,
+              longitude: hasCoords ? activity.longitude! : undefined,
+            },
+          );
+          if (!merged.some((item) => item.id === location.id)) {
+            merged = [
+              ...merged,
+              {
+                ...location,
+                createAt: new Date(location.createAt),
+                updateAt: location.updateAt ? new Date(location.updateAt) : null,
+              },
+            ];
+          }
+        } catch {
+          // Skip activities that cannot be synced.
+        }
+      }
+
+      if (cancelled) return;
+      setTripLocations(merged.sort((a, b) => a.order - b.order));
+    };
+
+    api
+      .syncLocationsFromActivities(trip.id)
+      .then(applyLocations)
+      .catch(async (err) => {
+        console.error("Failed to sync planner places to locations:", err);
+        await fallbackSyncFromActivities();
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [trip.id, trip.activities, trip.locations]);
+
+  const hasLocations = tripLocations.length > 0;
   const defaultDate = trip.startDate.toISOString().slice(0, 10);
   const overviewDays = buildOverviewDays(trip.startDate, trip.endDate);
   const tripActivities = trip.activities ?? [];
@@ -218,8 +302,8 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                 <div className='flex items-start mt-4'>
                   <MapPin className='h-6 w-6 mr-3 text-gray-500' />
                   <p>
-                    Destinations: {trip.locations.length} location
-                    {trip.locations.length !== 1 ? "s" : ""}
+                    Destinations: {tripLocations.length} location
+                    {tripLocations.length !== 1 ? "s" : ""}
                   </p>
                 </div>
                 <p className='text-sm text-emerald-700 mt-4'>
@@ -311,7 +395,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
           </TabsContent>
           <TabsContent value='itinerary'>
             <div className='space-y-6'>
-              {trip.locations.length === 0 ? (
+              {tripLocations.length === 0 ? (
                 <div className='flex flex-col items-center justify-center py-12 bg-gray-50 rounded-lg'>
                   <h2 className='text-xl text-gray-500 mb-4'>
                     No locations added yet.
@@ -343,7 +427,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                   <div className='mt-4'>
                     <SortableItinerary
                       tripId={trip.id}
-                      locations={trip.locations.map((loc) => ({
+                      locations={tripLocations.map((loc) => ({
                         id: loc.id,
                         locationTitle: loc.locationTitle,
                         tripId: loc.tripId,
@@ -364,7 +448,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
               tripId={trip.id}
               startDate={trip.startDate.toISOString()}
               endDate={trip.endDate.toISOString()}
-              locations={trip.locations.map((loc) => ({
+              locations={tripLocations.map((loc) => ({
                 id: loc.id,
                 locationTitle: loc.locationTitle,
                 latitude: loc.latitude,
@@ -372,6 +456,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                 order: loc.order,
               }))}
               hasLocations={hasLocations}
+              onLocationAdded={handleLocationAdded}
             />
           </TabsContent>
           <TabsContent value='prayer'>
@@ -388,7 +473,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
             <div className='h-72 md:h-96 lg:h-130 rounded-lg overflow-hidden'>
               <h2 className='text-xl font-semibold mb-4'>Map</h2>
               <Map
-                itineraries={trip.locations.map((loc, idx) => ({
+                itineraries={tripLocations.map((loc, idx) => ({
                   ...loc,
                   order: idx,
                 }))}

@@ -26,6 +26,7 @@ interface ItineraryActivitiesProps {
     "id" | "locationTitle" | "latitude" | "longitude" | "order"
   >[];
   hasLocations: boolean;
+  onLocationAdded?: (location: ApiLocation) => void;
 }
 
 interface PlannerDay {
@@ -143,6 +144,7 @@ export default function ItineraryActivities({
   endDate,
   locations,
   hasLocations,
+  onLocationAdded,
 }: ItineraryActivitiesProps) {
   const plannerDays = buildPlannerDays(startDate, endDate);
   const firstPlannerDate =
@@ -435,7 +437,32 @@ export default function ItineraryActivities({
         a.startTime.localeCompare(b.startTime),
       ),
     );
+    if (created.syncedLocation) {
+      onLocationAdded?.(created.syncedLocation);
+    }
     return created;
+  }
+
+  async function syncActivityToTripLocation(input: {
+    title: string;
+    address?: string;
+    latitude?: number;
+    longitude?: number;
+  }) {
+    const hasCoords = input.latitude != null && input.longitude != null;
+    const address = input.address?.trim() || input.title;
+    if (!hasCoords && !input.address?.trim()) return;
+
+    try {
+      const location = await api.addLocation(tripId, address, {
+        locationTitle: input.title,
+        latitude: hasCoords ? input.latitude : undefined,
+        longitude: hasCoords ? input.longitude : undefined,
+      });
+      onLocationAdded?.(location);
+    } catch (err) {
+      console.error("Failed to sync activity location:", err);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -534,6 +561,14 @@ export default function ItineraryActivities({
         startTime: start.toISOString(),
         endTime: end.toISOString(),
       });
+      if (!created.syncedLocation) {
+        await syncActivityToTripLocation({
+          title: place.name,
+          address: place.address || undefined,
+          latitude: place.latitude,
+          longitude: place.longitude,
+        });
+      }
       const nextSlot = findNextAvailableSlot(selectedDate, [
         ...activities,
         created,

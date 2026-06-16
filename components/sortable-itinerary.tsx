@@ -16,7 +16,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Button } from "./ui/button";
 
@@ -84,6 +84,10 @@ export default function SortableItinerary({
 }) {
   const [items, setItems] = useState(locations);
   const sensors = useSensors(useSensor(PointerSensor));
+
+  useEffect(() => {
+    setItems(locations);
+  }, [locations]);
 
   const handleDelete = (deletedId: string) => {
     setItems((prev) => prev.filter((item) => item.id !== deletedId));

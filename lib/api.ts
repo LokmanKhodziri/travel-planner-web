@@ -66,11 +66,24 @@ export const api = {
       body: JSON.stringify(body),
     }),
   getLocations: () => fetchApi<TransformedLocation[]>("/api/locations"),
-  addLocation: (tripId: string, address: string) =>
+  addLocation: (
+    tripId: string,
+    address: string,
+    options?: {
+      locationTitle?: string;
+      latitude?: number;
+      longitude?: number;
+    },
+  ) =>
     fetchApi<ApiLocation>(`/api/trips/${tripId}/locations`, {
       method: "POST",
-      body: JSON.stringify({ address }),
+      body: JSON.stringify({ address, ...options }),
     }),
+  syncLocationsFromActivities: (tripId: string) =>
+    fetchApi<ApiLocation[]>(
+      `/api/trips/${tripId}/locations/sync-from-activities`,
+      { method: "POST" },
+    ),
   deleteLocation: (locationId: string, tripId: string) =>
     fetchApi<{ success: boolean }>(
       `/api/locations/${locationId}?tripId=${encodeURIComponent(tripId)}`,
