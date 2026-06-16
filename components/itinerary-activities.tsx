@@ -876,7 +876,7 @@ export default function ItineraryActivities({
 
     if (updates.length === 0) {
       setScheduleNotice(
-        "Schedule already leaves room for travel, or travel estimates are unavailable.",
+        "Every stop already has enough travel time. Your free-time gaps are kept.",
       );
       return;
     }
@@ -884,12 +884,12 @@ export default function ItineraryActivities({
     const summary = updates
       .map(
         (update) =>
-          `${update.title}: +${update.travelMinutes} min travel before start`,
+          `${update.title}: move later by ${update.travelMinutes} min travel`,
       )
       .join("\n");
 
     const confirmed = window.confirm(
-      `Shift ${updates.length} later activit${updates.length === 1 ? "y" : "ies"} to include ${travelModeLabel(travelMode).toLowerCase()} time between stops?\n\n${summary}`,
+      `Only ${updates.length} activit${updates.length === 1 ? "y" : "ies"} with too little travel time will move. Free-time gaps stay as they are.\n\n${summary}`,
     );
     if (!confirmed) return;
 
@@ -916,7 +916,7 @@ export default function ItineraryActivities({
           .sort((a, b) => a.startTime.localeCompare(b.startTime)),
       );
       setScheduleNotice(
-        `Updated ${updates.length} activit${updates.length === 1 ? "y" : "ies"} to include travel time between stops.`,
+        `Updated ${updates.length} activit${updates.length === 1 ? "y" : "ies"} that needed more travel time. Free-time gaps were kept.`,
       );
     } catch (err) {
       setError(

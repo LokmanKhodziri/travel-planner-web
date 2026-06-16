@@ -45,24 +45,27 @@ export function computeTravelAdjustedSchedule(
     const durationMs =
       new Date(current.endTime).getTime() -
       new Date(current.startTime).getTime();
-    const newStart = new Date(previousEnd.getTime() + travelMinutes * 60 * 1000);
+    const currentStart = new Date(current.startTime);
+    const requiredStart = new Date(
+      previousEnd.getTime() + travelMinutes * 60 * 1000,
+    );
+
+    // Keep intentional free time when the gap already fits travel.
+    if (currentStart.getTime() >= requiredStart.getTime()) {
+      previousEnd = new Date(current.endTime);
+      continue;
+    }
+
+    const newStart = requiredStart;
     const newEnd = new Date(newStart.getTime() + durationMs);
 
-    const startChanged =
-      Math.abs(newStart.getTime() - new Date(current.startTime).getTime()) >=
-      60_000;
-    const endChanged =
-      Math.abs(newEnd.getTime() - new Date(current.endTime).getTime()) >= 60_000;
-
-    if (startChanged || endChanged) {
-      updates.push({
-        activityId: current.id,
-        title: current.title,
-        startTime: newStart.toISOString(),
-        endTime: newEnd.toISOString(),
-        travelMinutes,
-      });
-    }
+    updates.push({
+      activityId: current.id,
+      title: current.title,
+      startTime: newStart.toISOString(),
+      endTime: newEnd.toISOString(),
+      travelMinutes,
+    });
 
     previousEnd = newEnd;
   }
