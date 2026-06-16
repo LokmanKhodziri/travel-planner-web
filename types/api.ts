@@ -5,7 +5,17 @@ export interface ApiUser {
   email: string;
   name: string | null;
   image: string | null;
+  homeCity?: string | null;
+  timezone?: string | null;
   role: "USER" | "ADMIN";
+  createAt?: string;
+  hasPassword?: boolean;
+  stats?: {
+    trips: number;
+    activities: number;
+    locations: number;
+    upcomingTrips: number;
+  };
 }
 
 export interface ApiLocation {

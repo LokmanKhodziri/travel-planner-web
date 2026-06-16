@@ -52,6 +52,21 @@ export async function fetchApi<T>(
 
 export const api = {
   getMe: () => fetchApi<ApiUser>("/api/auth/me"),
+  updateProfile: (body: {
+    name?: string;
+    homeCity?: string | null;
+    timezone?: string | null;
+    image?: string | null;
+  }) =>
+    fetchApi<ApiUser>("/api/auth/me", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  changePassword: (body: { currentPassword: string; newPassword: string }) =>
+    fetchApi<{ success: boolean }>("/api/auth/me/password", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   getTrips: () => fetchApi<ApiTrip[]>("/api/trips"),
   getTrip: (id: string) =>
     fetchApi<ApiTrip & { locations: ApiLocation[]; activities: ApiActivity[] }>(
