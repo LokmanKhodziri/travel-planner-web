@@ -12,7 +12,7 @@ import type {
 } from "@/types/api";
 import { formatDateTime } from "@/lib/utils";
 import { Button } from "./ui/button";
-import { CalendarDays, Clock, MapPin } from "lucide-react";
+import { CalendarDays, Clock, MapPin, Sparkles } from "lucide-react";
 
 interface ItineraryActivitiesProps {
   tripId: string;
@@ -108,6 +108,32 @@ function timeRangesOverlap(
   return start < existingEnd && end > existingStart;
 }
 
+function findSuggestedDay(
+  plannerDays: PlannerDay[],
+  activities: ApiActivity[],
+): string {
+  if (plannerDays.length === 0) return "";
+
+  return plannerDays.reduce((best, day) => {
+    const bestCount = activities.filter(
+      (activity) => activityDateKey(activity) === best.dateKey,
+    ).length;
+    const dayCount = activities.filter(
+      (activity) => activityDateKey(activity) === day.dateKey,
+    ).length;
+    return dayCount < bestCount ? day : best;
+  }).dateKey;
+}
+
+function activityDurationMinutes(activity: ApiActivity) {
+  const durationMs =
+    new Date(activity.endTime).getTime() - new Date(activity.startTime).getTime();
+  return Math.max(
+    DEFAULT_ACTIVITY_DURATION_MINUTES,
+    Math.round(durationMs / 60000),
+  );
+}
+
 export default function ItineraryActivities({
   tripId,
   startDate,
@@ -150,6 +176,7 @@ export default function ItineraryActivities({
   >({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [movingActivityId, setMovingActivityId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const addressDebounceRef = useRef<number | null>(null);
 
@@ -512,12 +539,59 @@ export default function ItineraryActivities({
     }
   }
 
-  function handleSelectDate(dateKey: string) {
+  async function handleMoveActivity(
+    activity: ApiActivity,
+    targetDateKey: string,
+  ) {
+    if (activityDateKey(activity) === targetDateKey) return;
+
+    const durationMinutes = activityDurationMinutes(activity);
+    const others = activities.filter((item) => item.id !== activity.id);
+    const slot = findNextAvailableSlot(
+      targetDateKey,
+      others,
+      durationMinutes,
+    );
+    const start = new Date(slot.startTime);
+    const end = addMinutes(start, durationMinutes);
+
+    setMovingActivityId(activity.id);
+    setError(null);
+    try {
+      const updated = await api.updateActivity(tripId, activity.id, {
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+      });
+      setActivities((prev) =>
+        [...prev.filter((item) => item.id !== activity.id), updated].sort(
+          (a, b) => a.startTime.localeCompare(b.startTime),
+        ),
+      );
+      handleAssignDay(targetDateKey);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to move activity",
+      );
+    } finally {
+      setMovingActivityId(null);
+    }
+  }
+
+  function handleAssignDay(dateKey: string) {
     setSelectedDate(dateKey);
     setStartTime("");
     setEndTime("");
     setRecommendationTimes({});
     resetActivityLocation();
+  }
+
+  function handleSuggestDay() {
+    const suggested = findSuggestedDay(plannerDays, activities);
+    if (suggested) handleAssignDay(suggested);
+  }
+
+  function handleSelectDate(dateKey: string) {
+    handleAssignDay(dateKey);
   }
 
   const recommendationCategories = recommendations
@@ -545,6 +619,9 @@ export default function ItineraryActivities({
   );
   const selectedActivities = activitiesByDate[selectedDate] ?? [];
   const nextAvailableActivityTime = findNextAvailableSlot();
+  const suggestedDayKey = findSuggestedDay(plannerDays, activities);
+  const suggestedDay =
+    plannerDays.find((day) => day.dateKey === suggestedDayKey) ?? null;
   const travelTimeByFromActivity = new Map(
     travelTimeSegments.map((segment) => [segment.fromActivityId, segment]),
   );
@@ -597,6 +674,48 @@ export default function ItineraryActivities({
               </button>
             );
           })}
+        </div>
+
+        <div className='mt-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4'>
+          <div className='flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between'>
+            <div className='flex-1'>
+              <label
+                htmlFor='assign-day'
+                className='mb-2 block text-sm font-medium text-gray-800'
+              >
+                Assign new activities to
+              </label>
+              <select
+                id='assign-day'
+                value={selectedDate}
+                onChange={(e) => handleAssignDay(e.target.value)}
+                className='w-full rounded-lg border border-gray-300 bg-white p-3 text-sm'
+              >
+                {plannerDays.map((day) => {
+                  const count = activitiesByDate[day.dateKey]?.length ?? 0;
+                  return (
+                    <option key={day.dateKey} value={day.dateKey}>
+                      {day.label} · {day.shortDate} ({count} activit
+                      {count === 1 ? "y" : "ies"})
+                    </option>
+                  );
+                })}
+              </select>
+              <p className='mt-2 text-xs text-gray-600'>
+                Pick a day here or use the tabs above. Times auto-fill to the
+                next available slot on the selected day.
+              </p>
+            </div>
+            <Button
+              type='button'
+              variant='outline'
+              className='shrink-0 gap-2 bg-white'
+              onClick={handleSuggestDay}
+            >
+              <Sparkles className='h-4 w-4' />
+              Suggest {suggestedDay?.label ?? "day"}
+            </Button>
+          </div>
         </div>
       </section>
 
@@ -681,13 +800,34 @@ export default function ItineraryActivities({
                             </p>
                           )}
                         </div>
-                        <Button
-                          variant='destructive'
-                          size='sm'
-                          onClick={() => handleDelete(activity.id, activity.title)}
-                        >
-                          Delete
-                        </Button>
+                        <div className='flex flex-col items-stretch gap-2 sm:items-end'>
+                          <label className='text-xs font-medium text-gray-500'>
+                            Move to day
+                          </label>
+                          <select
+                            value={activityDateKey(activity)}
+                            onChange={(e) =>
+                              handleMoveActivity(activity, e.target.value)
+                            }
+                            disabled={movingActivityId === activity.id}
+                            className='rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm'
+                          >
+                            {plannerDays.map((day) => (
+                              <option key={day.dateKey} value={day.dateKey}>
+                                {day.label} · {day.shortDate}
+                              </option>
+                            ))}
+                          </select>
+                          <Button
+                            variant='destructive'
+                            size='sm'
+                            onClick={() =>
+                              handleDelete(activity.id, activity.title)
+                            }
+                          >
+                            Delete
+                          </Button>
+                        </div>
                       </div>
                     </li>
                     {hasNextActivity && (
@@ -852,14 +992,37 @@ export default function ItineraryActivities({
       {loading && <p className='text-gray-500'>Loading activities...</p>}
 
       <section className='rounded-lg border border-blue-100 bg-blue-50/40 p-4'>
-        <div className='mb-4'>
-          <h3 className='font-semibold text-gray-800'>
-            Recommended activities
-          </h3>
-          <p className='text-sm text-gray-600'>
-            Suggestions are based on your saved trip locations. Pick a time
-            range and add any suggestion into your itinerary activities.
-          </p>
+        <div className='mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
+          <div>
+            <h3 className='font-semibold text-gray-800'>
+              Recommended activities
+            </h3>
+            <p className='text-sm text-gray-600'>
+              Suggestions are based on your saved trip locations. New picks go
+              to {selectedDay?.label ?? "the selected day"} (
+              {selectedDay?.shortDate ?? selectedDate}).
+            </p>
+          </div>
+          <div className='sm:w-64'>
+            <label
+              htmlFor='recommendation-day'
+              className='mb-1 block text-xs font-medium text-gray-600'
+            >
+              Add recommendations to
+            </label>
+            <select
+              id='recommendation-day'
+              value={selectedDate}
+              onChange={(e) => handleAssignDay(e.target.value)}
+              className='w-full rounded-lg border border-gray-300 bg-white p-2 text-sm'
+            >
+              {plannerDays.map((day) => (
+                <option key={day.dateKey} value={day.dateKey}>
+                  {day.label} · {day.shortDate}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {!hasLocations ? (
