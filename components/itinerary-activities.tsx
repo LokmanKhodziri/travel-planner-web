@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import type {
   ActivityRecommendationsResponse,
@@ -34,7 +34,9 @@ import {
 import { Button } from "./ui/button";
 import PlannerStretchTimeline from "./planner-stretch-timeline";
 import ActivityEditDialog from "./activity-edit-dialog";
-import { CalendarDays, MapPin, RefreshCw, Route, Sparkles } from "lucide-react";
+import ActivityAddDialog from "./activity-add-dialog";
+import PlannerGettingStarted from "./planner-getting-started";
+import { CalendarDays, ChevronDown, MapPin, Plus, RefreshCw, Route, Sparkles } from "lucide-react";
 
 interface ItineraryActivitiesProps {
   tripId: string;
@@ -216,26 +218,13 @@ export default function ItineraryActivities({
   const [selectedDate, setSelectedDate] = useState(firstPlannerDate);
   const [activeRecommendationCategory, setActiveRecommendationCategory] =
     useState("All");
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [activityLocationId, setActivityLocationId] = useState("");
-  const [activityAddress, setActivityAddress] = useState("");
-  const [activityLatitude, setActivityLatitude] = useState<number | null>(null);
-  const [activityLongitude, setActivityLongitude] = useState<number | null>(
-    null,
-  );
-  const [addressSuggestions, setAddressSuggestions] = useState<
-    PlaceSuggestion[]
-  >([]);
-  const [addressSuggestionsLoading, setAddressSuggestionsLoading] =
-    useState(false);
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
   const [recommendationTimes, setRecommendationTimes] = useState<
     Record<string, { startTime: string; endTime: string }>
   >({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [showAddActivityDialog, setShowAddActivityDialog] = useState(false);
+  const [showAdvancedSchedule, setShowAdvancedSchedule] = useState(false);
   const [movingActivityId, setMovingActivityId] = useState<string | null>(null);
   const [reorderingActivities, setReorderingActivities] = useState(false);
   const [editingActivity, setEditingActivity] = useState<ApiActivity | null>(null);
@@ -248,7 +237,6 @@ export default function ItineraryActivities({
   const [showPrayerTimes, setShowPrayerTimes] = useState(true);
   const [travelMode, setTravelMode] = useState<TravelMode>("driving");
   const [error, setError] = useState<string | null>(null);
-  const addressDebounceRef = useRef<number | null>(null);
 
   const loadActivities = () => {
     setLoading(true);
@@ -273,41 +261,8 @@ export default function ItineraryActivities({
 
   useEffect(() => {
     setSelectedDate(firstPlannerDate);
-    setStartTime("");
-    setEndTime("");
     setRecommendationTimes({});
-    resetActivityLocation();
   }, [firstPlannerDate, tripId]);
-
-  useEffect(() => {
-    const trimmedAddress = activityAddress.trim();
-    if (activityLocationId || trimmedAddress.length < 2) {
-      setAddressSuggestions([]);
-      return;
-    }
-
-    setAddressSuggestionsLoading(true);
-    if (addressDebounceRef.current) {
-      window.clearTimeout(addressDebounceRef.current);
-    }
-
-    addressDebounceRef.current = window.setTimeout(async () => {
-      try {
-        const results = await api.searchPlaces(trimmedAddress);
-        setAddressSuggestions(results);
-      } catch {
-        setAddressSuggestions([]);
-      } finally {
-        setAddressSuggestionsLoading(false);
-      }
-    }, 300);
-
-    return () => {
-      if (addressDebounceRef.current) {
-        window.clearTimeout(addressDebounceRef.current);
-      }
-    };
-  }, [activityAddress, activityLocationId]);
 
   useEffect(() => {
     if (!hasLocations) return;
@@ -412,47 +367,6 @@ export default function ItineraryActivities({
       })
       .finally(() => setPrayerTimesLoading(false));
   }, [tripId, selectedDate, hasLocations]);
-
-  function resetActivityLocation() {
-    setActivityLocationId("");
-    setActivityAddress("");
-    setActivityLatitude(null);
-    setActivityLongitude(null);
-    setAddressSuggestions([]);
-  }
-
-  function handleSelectSavedLocation(locationId: string) {
-    setActivityLocationId(locationId);
-    if (!locationId) {
-      setActivityAddress("");
-      setActivityLatitude(null);
-      setActivityLongitude(null);
-      return;
-    }
-
-    const location = locations.find((item) => item.id === locationId);
-    if (!location) return;
-
-    setActivityAddress(location.locationTitle);
-    setActivityLatitude(location.latitude);
-    setActivityLongitude(location.longitude);
-    setAddressSuggestions([]);
-  }
-
-  function handleActivityAddressChange(value: string) {
-    setActivityLocationId("");
-    setActivityAddress(value);
-    setActivityLatitude(null);
-    setActivityLongitude(null);
-  }
-
-  function handleSelectAddressSuggestion(description: string) {
-    setActivityLocationId("");
-    setActivityAddress(description);
-    setActivityLatitude(null);
-    setActivityLongitude(null);
-    setAddressSuggestions([]);
-  }
 
   function getActivitiesForDate(
     dateKey: string,
@@ -610,24 +524,21 @@ export default function ItineraryActivities({
     }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const defaultSlot = findNextAvailableSlot();
-    const activityStartTime = startTime || defaultSlot.startTime;
-    const activityEndTime = endTime || defaultSlot.endTime;
-    if (!title || !activityStartTime || !activityEndTime) return;
-
-    const start = new Date(activityStartTime);
-    const end = new Date(activityEndTime);
+  async function handleAddActivitySave(values: {
+    title: string;
+    description?: string;
+    startTime: string;
+    endTime: string;
+    address?: string;
+    latitude?: number;
+    longitude?: number;
+  }) {
+    const start = new Date(values.startTime);
+    const end = new Date(values.endTime);
     const overlappingActivity = findOverlappingActivity(start, end);
     if (overlappingActivity) {
-      const nextSlot = findNextAvailableSlot();
-      setStartTime(nextSlot.startTime);
-      setEndTime(nextSlot.endTime);
       setError(
-        `"${overlappingActivity.title}" already uses that time. Showing next available time: ${timeOnly(
-          nextSlot.startTime,
-        )} - ${timeOnly(nextSlot.endTime)}.`,
+        `"${overlappingActivity.title}" already uses that time. Try a different start time or duration.`,
       );
       return;
     }
@@ -636,19 +547,16 @@ export default function ItineraryActivities({
     setError(null);
     try {
       await createActivity({
-        title,
-        description: description || undefined,
-        address: activityAddress.trim() || undefined,
-        latitude: activityLatitude ?? undefined,
-        longitude: activityLongitude ?? undefined,
+        title: values.title,
+        description: values.description,
+        address: values.address,
+        latitude: values.latitude,
+        longitude: values.longitude,
         startTime: start.toISOString(),
         endTime: end.toISOString(),
       });
-      setTitle("");
-      setDescription("");
-      setStartTime("");
-      setEndTime("");
-      resetActivityLocation();
+      setShowAddActivityDialog(false);
+      setScheduleNotice(`Added "${values.title}" to ${selectedDay?.label ?? "your day"}.`);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to create activity",
@@ -723,6 +631,7 @@ export default function ItineraryActivities({
         [place.id]: nextSlot,
       }));
       rememberExcludedRecommendation(place.id);
+      setScheduleNotice(`Added "${place.name}" to ${selectedDay?.label ?? "your day"}.`);
     } catch (err) {
       setError(
         err instanceof Error
@@ -967,11 +876,8 @@ export default function ItineraryActivities({
 
   function handleAssignDay(dateKey: string) {
     setSelectedDate(dateKey);
-    setStartTime("");
-    setEndTime("");
     setRecommendationTimes({});
     setScheduleNotice(null);
-    resetActivityLocation();
   }
 
   function handleSuggestDay() {
@@ -1091,48 +997,32 @@ export default function ItineraryActivities({
           })}
         </div>
 
-        <div className='mt-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4'>
-          <div className='flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between'>
-            <div className='flex-1'>
-              <label
-                htmlFor='assign-day'
-                className='mb-2 block text-sm font-medium text-gray-800'
-              >
-                Assign new activities to
-              </label>
-              <select
-                id='assign-day'
-                value={selectedDate}
-                onChange={(e) => handleAssignDay(e.target.value)}
-                className='w-full rounded-lg border border-gray-300 bg-white p-3 text-sm'
-              >
-                {plannerDays.map((day) => {
-                  const count = activitiesByDate[day.dateKey]?.length ?? 0;
-                  return (
-                    <option key={day.dateKey} value={day.dateKey}>
-                      {day.label} · {day.shortDate} ({count} activit
-                      {count === 1 ? "y" : "ies"})
-                    </option>
-                  );
-                })}
-              </select>
-              <p className='mt-2 text-xs text-gray-600'>
-                Pick a day here or use the tabs above. Times auto-fill to the
-                next available slot on the selected day.
-              </p>
-            </div>
+        {activities.length === 0 && (
+          <div className='mt-4 flex flex-wrap items-center gap-2'>
             <Button
               type='button'
               variant='outline'
-              className='shrink-0 gap-2 bg-white'
+              size='sm'
+              className='gap-2 bg-white'
               onClick={handleSuggestDay}
             >
               <Sparkles className='h-4 w-4' />
               Suggest {suggestedDay?.label ?? "day"}
             </Button>
+            <p className='text-xs text-gray-500'>
+              Jump to the day with the fewest activities.
+            </p>
           </div>
-        </div>
+        )}
       </section>
+
+      {activities.length === 0 && (
+        <PlannerGettingStarted
+          tripId={tripId}
+          hasLocations={hasLocations}
+          onAddActivity={() => setShowAddActivityDialog(true)}
+        />
+      )}
 
       <section className='grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]'>
         <div className='rounded-xl border border-gray-200 bg-white p-4 shadow-sm'>
@@ -1146,68 +1036,94 @@ export default function ItineraryActivities({
                 {prayerTimes ? ` · ${prayerTimes.timezone}` : ""}
               </p>
               <p className='mt-1 text-xs text-gray-500'>
-                Activities stack in order with travel info on each card. Nearby
-                stops automatically use walking. Prayer times appear on the
-                right.
+                Drag activities to reorder. Use ⋯ on each card to edit or move.
               </p>
             </div>
             <div className='flex flex-wrap items-center gap-3'>
-              {selectedActivities.length >= 2 && (
-                <>
-                  <label className='flex items-center gap-2 text-xs font-medium text-gray-600'>
-                    <span className='hidden sm:inline'>Travel by</span>
-                    <select
-                      value={travelMode}
-                      onChange={(e) =>
-                        handleTravelModeChange(e.target.value as TravelMode)
-                      }
-                      className='rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs'
-                    >
-                      {TRAVEL_MODE_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <Button
-                    type='button'
-                    variant='outline'
-                    size='sm'
-                    className='gap-2'
-                    disabled={
-                      syncingSchedule ||
-                      travelTimesLoading ||
-                      pendingTravelAdjustments.length === 0
-                    }
-                    onClick={handleSyncScheduleWithTravel}
-                  >
-                    <Route className='h-4 w-4' />
-                    {syncingSchedule
-                      ? "Adjusting..."
-                      : pendingTravelAdjustments.length > 0
-                        ? `Add travel gaps (${pendingTravelAdjustments.length})`
-                        : "Travel gaps applied"}
-                  </Button>
-                </>
-              )}
-              {hasLocations && (
-                <label className='flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800'>
-                  <input
-                    type='checkbox'
-                    checked={showPrayerTimes}
-                    onChange={(e) => setShowPrayerTimes(e.target.checked)}
-                    className='rounded border-emerald-300'
-                  />
-                  Show prayer times
-                </label>
-              )}
+              <Button
+                type='button'
+                size='sm'
+                className='gap-2'
+                onClick={() => setShowAddActivityDialog(true)}
+              >
+                <Plus className='h-4 w-4' />
+                Add activity
+              </Button>
               <span className='rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600'>
                 {selectedActivities.length} activit
                 {selectedActivities.length === 1 ? "y" : "ies"}
               </span>
             </div>
           </div>
+
+          {(selectedActivities.length >= 2 || hasLocations) && (
+            <div className='mb-4 rounded-lg border border-gray-200 bg-gray-50'>
+              <button
+                type='button'
+                onClick={() => setShowAdvancedSchedule((prev) => !prev)}
+                className='flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-gray-700'
+              >
+                Adjust schedule
+                <ChevronDown
+                  className={`h-4 w-4 transition ${showAdvancedSchedule ? "rotate-180" : ""}`}
+                />
+              </button>
+              {showAdvancedSchedule && (
+                <div className='flex flex-wrap items-center gap-3 border-t border-gray-200 px-3 py-3'>
+                  {selectedActivities.length >= 2 && (
+                    <>
+                      <label className='flex items-center gap-2 text-xs font-medium text-gray-600'>
+                        <span>Travel by</span>
+                        <select
+                          value={travelMode}
+                          onChange={(e) =>
+                            handleTravelModeChange(e.target.value as TravelMode)
+                          }
+                          className='rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs'
+                        >
+                          {TRAVEL_MODE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <Button
+                        type='button'
+                        variant='outline'
+                        size='sm'
+                        className='gap-2'
+                        disabled={
+                          syncingSchedule ||
+                          travelTimesLoading ||
+                          pendingTravelAdjustments.length === 0
+                        }
+                        onClick={handleSyncScheduleWithTravel}
+                      >
+                        <Route className='h-4 w-4' />
+                        {syncingSchedule
+                          ? "Adjusting..."
+                          : pendingTravelAdjustments.length > 0
+                            ? `Add travel gaps (${pendingTravelAdjustments.length})`
+                            : "Travel gaps applied"}
+                      </Button>
+                    </>
+                  )}
+                  {hasLocations && (
+                    <label className='flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800'>
+                      <input
+                        type='checkbox'
+                        checked={showPrayerTimes}
+                        onChange={(e) => setShowPrayerTimes(e.target.checked)}
+                        className='rounded border-emerald-300'
+                      />
+                      Show prayer times
+                    </label>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {scheduleNotice && (
             <p className='mb-3 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800'>
@@ -1225,8 +1141,17 @@ export default function ItineraryActivities({
                 No activities planned for this day yet.
               </p>
               <p className='mt-1 text-sm text-gray-500'>
-                Add your own activity below or choose one from recommendations.
+                Add an activity or pick a suggestion from recommendations below.
               </p>
+              <Button
+                type='button'
+                size='sm'
+                className='mt-4 gap-2'
+                onClick={() => setShowAddActivityDialog(true)}
+              >
+                <Plus className='h-4 w-4' />
+                Add activity
+              </Button>
               {!hasLocations && (
                 <p className='mt-2 text-sm text-amber-700'>
                   Add a trip location to show prayer times on this timeline.
@@ -1297,106 +1222,21 @@ export default function ItineraryActivities({
         </aside>
       </section>
 
-      <form
-        onSubmit={handleSubmit}
-        className='rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4'
-      >
-        <h3 className='font-semibold text-gray-800'>
-          Add activity to {selectedDay?.label ?? "selected day"}
-        </h3>
-        <div className='grid gap-4 md:grid-cols-2'>
-          <input
-            type='text'
-            placeholder='Activity title (e.g. Museum visit)'
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-            className='border border-gray-300 rounded-lg p-3 md:col-span-2'
-          />
-          <input
-            type='text'
-            placeholder='Description (optional)'
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className='border border-gray-300 rounded-lg p-3 md:col-span-2'
-          />
-          {sortedLocations.length > 0 && (
-            <select
-              value={activityLocationId}
-              onChange={(e) => handleSelectSavedLocation(e.target.value)}
-              className='border border-gray-300 rounded-lg p-3 md:col-span-2'
-            >
-              <option value=''>Use a saved trip place (optional)</option>
-              {sortedLocations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.locationTitle}
-                </option>
-              ))}
-            </select>
-          )}
-          <div className='relative md:col-span-2'>
-            <input
-              type='text'
-              placeholder='Activity location or address (optional)'
-              value={activityAddress}
-              onChange={(e) => handleActivityAddressChange(e.target.value)}
-              onBlur={() =>
-                window.setTimeout(() => setAddressSuggestions([]), 150)
-              }
-              className='w-full border border-gray-300 rounded-lg p-3'
-            />
-            {addressSuggestions.length > 0 && (
-              <ul className='absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg'>
-                {addressSuggestions.map((suggestion) => (
-                  <li
-                    key={suggestion.id}
-                    className='cursor-pointer px-4 py-3 text-sm text-gray-800 hover:bg-slate-50'
-                    onMouseDown={() =>
-                      handleSelectAddressSuggestion(suggestion.description)
-                    }
-                  >
-                    {suggestion.description}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {addressSuggestionsLoading && (
-              <p className='mt-2 text-xs text-gray-500'>
-                Loading location suggestions...
-              </p>
-            )}
-            {activityLatitude != null && activityLongitude != null ? (
-              <p className='mt-2 text-xs text-emerald-700'>
-                Location coordinates ready for travel-time estimates.
-              </p>
-            ) : activityAddress.trim() ? (
-              <p className='mt-2 text-xs text-gray-500'>
-                Address will be geocoded when you save this activity.
-              </p>
-            ) : null}
-          </div>
-          <input
-            type='datetime-local'
-            value={startTime || nextAvailableActivityTime.startTime}
-            onChange={(e) => setStartTime(e.target.value)}
-            required
-            className='border border-gray-300 rounded-lg p-3'
-          />
-          <input
-            type='datetime-local'
-            value={endTime || nextAvailableActivityTime.endTime}
-            onChange={(e) => setEndTime(e.target.value)}
-            required
-            className='border border-gray-300 rounded-lg p-3'
-          />
-        </div>
-        <Button type='submit' disabled={submitting}>
-          {submitting ? "Saving..." : "Add Activity"}
-        </Button>
-      </form>
-
       {error && <p className='text-red-600'>{error}</p>}
-      {loading && <p className='text-gray-500'>Loading activities...</p>}
+
+      <ActivityAddDialog
+        open={showAddActivityDialog}
+        saving={submitting}
+        dateKey={selectedDate}
+        dayLabel={selectedDay?.label ?? "Selected day"}
+        shortDate={selectedDay?.shortDate ?? selectedDate}
+        locations={sortedLocations}
+        defaultStartTime={nextAvailableActivityTime.startTime}
+        defaultEndTime={nextAvailableActivityTime.endTime}
+        onClose={() => setShowAddActivityDialog(false)}
+        onSave={handleAddActivitySave}
+        onSearchPlaces={(query) => api.searchPlaces(query)}
+      />
 
       <ActivityEditDialog
         activity={editingActivity}
@@ -1419,8 +1259,7 @@ export default function ItineraryActivities({
               {selectedDay?.shortDate ?? selectedDate}).
             </p>
           </div>
-          <div className='flex flex-col gap-2 sm:items-end'>
-            <Button
+          <Button
               type='button'
               size='sm'
               variant='outline'
@@ -1428,7 +1267,7 @@ export default function ItineraryActivities({
                 !hasLocations || recommendationsLoading || recommendationsRefreshing
               }
               onClick={handleRefreshRecommendations}
-              className='gap-2'
+              className='gap-2 shrink-0'
             >
               <RefreshCw
                 className={`h-4 w-4 ${
@@ -1439,27 +1278,6 @@ export default function ItineraryActivities({
                 ? "Finding new ideas..."
                 : "Suggest new recommendations"}
             </Button>
-            <div className='sm:w-64'>
-            <label
-              htmlFor='recommendation-day'
-              className='mb-1 block text-xs font-medium text-gray-600'
-            >
-              Add recommendations to
-            </label>
-            <select
-              id='recommendation-day'
-              value={selectedDate}
-              onChange={(e) => handleAssignDay(e.target.value)}
-              className='w-full rounded-lg border border-gray-300 bg-white p-2 text-sm'
-            >
-              {plannerDays.map((day) => (
-                <option key={day.dateKey} value={day.dateKey}>
-                  {day.label} · {day.shortDate}
-                </option>
-              ))}
-            </select>
-            </div>
-          </div>
         </div>
 
         {!hasLocations ? (
@@ -1676,7 +1494,7 @@ export default function ItineraryActivities({
                                 )
                               }
                             >
-                              Add to Activities
+                              Add to {selectedDay?.label ?? "day"}
                             </Button>
                           </div>
                         );

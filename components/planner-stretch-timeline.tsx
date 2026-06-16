@@ -5,8 +5,17 @@ import type {
   ApiActivity,
   PrayerTimings,
 } from "@/types/api";
-import { Button } from "./ui/button";
-import { Bus, Car, Clock, Footprints, GripVertical, MapPin, Pencil } from "lucide-react";
+import {
+  Bus,
+  Car,
+  Clock,
+  Footprints,
+  GripVertical,
+  MapPin,
+  MoreHorizontal,
+  Pencil,
+} from "lucide-react";
+import { useState } from "react";
 import type { TravelMode } from "@/types/api";
 import { formatTravelEstimateLabel } from "@/lib/travel-modes";
 import { activityPrimaryDateKey, clipActivityToDay } from "@/lib/planner-dates";
@@ -391,6 +400,96 @@ interface SortableTimelineActivityRowProps {
   onEditActivity: (activity: ApiActivity) => void;
 }
 
+interface ActivityActionsMenuProps {
+  activity: ApiActivity;
+  plannerDays: PlannerDay[];
+  reorderingActivities: boolean;
+  movingActivityId: string | null;
+  onMoveActivity: (activity: ApiActivity, dateKey: string) => void;
+  onDeleteActivity: (activityId: string, activityTitle: string) => void;
+  onEditActivity: (activity: ApiActivity) => void;
+}
+
+function ActivityActionsMenu({
+  activity,
+  plannerDays,
+  reorderingActivities,
+  movingActivityId,
+  onMoveActivity,
+  onDeleteActivity,
+  onEditActivity,
+}: ActivityActionsMenuProps) {
+  const [open, setOpen] = useState(false);
+  const disabled = reorderingActivities || movingActivityId === activity.id;
+
+  return (
+    <div className='relative shrink-0'>
+      <button
+        type='button'
+        disabled={disabled}
+        onClick={() => setOpen((prev) => !prev)}
+        className='rounded-md border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40'
+        aria-label={`Actions for ${activity.title}`}
+      >
+        <MoreHorizontal className='h-4 w-4' />
+      </button>
+      {open && (
+        <>
+          <button
+            type='button'
+            className='fixed inset-0 z-10 cursor-default'
+            aria-label='Close menu'
+            onClick={() => setOpen(false)}
+          />
+          <div className='absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg'>
+            <button
+              type='button'
+              className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50'
+              onClick={() => {
+                setOpen(false);
+                onEditActivity(activity);
+              }}
+            >
+              <Pencil className='h-3.5 w-3.5' />
+              Edit
+            </button>
+            <div className='border-t border-gray-100 px-3 py-2'>
+              <label className='mb-1 block text-[10px] font-medium uppercase tracking-wide text-gray-500'>
+                Move to day
+              </label>
+              <select
+                value={activityPrimaryDateKey(activity)}
+                onChange={(e) => {
+                  setOpen(false);
+                  onMoveActivity(activity, e.target.value);
+                }}
+                disabled={disabled}
+                className='w-full rounded-md border border-gray-300 bg-white px-2 py-1 text-xs'
+              >
+                {plannerDays.map((day) => (
+                  <option key={day.dateKey} value={day.dateKey}>
+                    {day.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type='button'
+              className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50'
+              onClick={() => {
+                setOpen(false);
+                onDeleteActivity(activity.id, activity.title);
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function SortableTimelineActivityRow({
   item,
   itemIndex,
@@ -491,46 +590,15 @@ function SortableTimelineActivityRow({
                 )}
               </div>
             </div>
-            <div className='flex shrink-0 flex-col gap-1.5'>
-              <select
-                value={activityPrimaryDateKey(block.activity)}
-                onChange={(e) =>
-                  onMoveActivity(block.activity, e.target.value)
-                }
-                disabled={
-                  movingActivityId === block.activity.id || reorderingActivities
-                }
-                className='rounded-md border border-gray-300 bg-white px-2 py-1 text-[11px]'
-              >
-                {plannerDays.map((day) => (
-                  <option key={day.dateKey} value={day.dateKey}>
-                    {day.label}
-                  </option>
-                ))}
-              </select>
-              <Button
-                type='button'
-                variant='outline'
-                size='sm'
-                className='h-7 px-2 text-[11px]'
-                disabled={reorderingActivities}
-                onClick={() => onEditActivity(block.activity)}
-              >
-                <Pencil className='h-3 w-3' />
-                Edit
-              </Button>
-              <Button
-                variant='destructive'
-                size='sm'
-                className='h-7 px-2 text-[11px]'
-                disabled={reorderingActivities}
-                onClick={() =>
-                  onDeleteActivity(block.activity.id, block.activity.title)
-                }
-              >
-                Delete
-              </Button>
-            </div>
+            <ActivityActionsMenu
+              activity={block.activity}
+              plannerDays={plannerDays}
+              reorderingActivities={reorderingActivities}
+              movingActivityId={movingActivityId}
+              onMoveActivity={onMoveActivity}
+              onDeleteActivity={onDeleteActivity}
+              onEditActivity={onEditActivity}
+            />
           </div>
 
           {(block.activity.address ||
