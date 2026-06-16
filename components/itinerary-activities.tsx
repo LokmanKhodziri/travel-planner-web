@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type {
   ActivityRecommendationsResponse,
@@ -10,12 +10,31 @@ import type {
   NearbyPlace,
   PlaceSuggestion,
   PrayerTimings,
+  TravelMode,
 } from "@/types/api";
 import { formatDateTime } from "@/lib/utils";
-import { computeTravelAdjustedSchedule } from "@/lib/planner-schedule";
+import { computeTravelAdjustedSchedule, computeScheduleForOrderedActivities } from "@/lib/planner-schedule";
+import {
+  activityPrimaryDateKey,
+  getActivitiesOverlappingDate,
+  plannerDateKey,
+} from "@/lib/planner-dates";
+import { filterRecommendationRows } from "@/lib/recommendation-matching";
+import {
+  getOpeningHoursLabel,
+  isVisitWithinOpeningHours,
+  suggestRecommendationTimeSlot,
+} from "@/lib/recommendation-schedule";
+import {
+  getStoredTravelMode,
+  storeTravelMode,
+  TRAVEL_MODE_OPTIONS,
+  travelModeLabel,
+} from "@/lib/travel-modes";
 import { Button } from "./ui/button";
 import PlannerStretchTimeline from "./planner-stretch-timeline";
-import { CalendarDays, Car, MapPin, Sparkles } from "lucide-react";
+import ActivityEditDialog from "./activity-edit-dialog";
+import { CalendarDays, MapPin, RefreshCw, Route, Sparkles } from "lucide-react";
 
 interface ItineraryActivitiesProps {
   tripId: string;
@@ -26,6 +45,7 @@ interface ItineraryActivitiesProps {
     "id" | "locationTitle" | "latitude" | "longitude" | "order"
   >[];
   hasLocations: boolean;
+  onLocationAdded?: (location: ApiLocation) => void;
 }
 
 interface PlannerDay {
@@ -37,9 +57,42 @@ interface PlannerDay {
 
 const DEFAULT_ACTIVITY_DURATION_MINUTES = 120;
 const PLANNER_DAY_START_HOUR = 9;
+const RECOMMENDATION_CATEGORY_ORDER = [
+  "Attraction",
+  "Museum",
+  "Park",
+  "Shopping",
+  "Gallery",
+  "Theme park",
+  "Aquarium",
+  "Zoo",
+  "Local special",
+] as const;
+
+function buildRecommendationCategories(categories: Iterable<string | undefined>) {
+  const discovered = new Set(
+    [...categories].filter((category): category is string => Boolean(category)),
+  );
+  const ordered = RECOMMENDATION_CATEGORY_ORDER.filter((category) =>
+    discovered.has(category),
+  );
+  const extras = [...discovered]
+    .filter(
+      (category) =>
+        !RECOMMENDATION_CATEGORY_ORDER.includes(
+          category as (typeof RECOMMENDATION_CATEGORY_ORDER)[number],
+        ),
+    )
+    .sort();
+  return ["All", ...ordered, ...extras];
+}
 
 function toDateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return plannerDateKey(date);
+}
+
+function activityDateKey(activity: ApiActivity) {
+  return activityPrimaryDateKey(activity);
 }
 
 function buildPlannerDays(startDate: string, endDate: string): PlannerDay[] {
@@ -71,10 +124,6 @@ function buildPlannerDays(startDate: string, endDate: string): PlannerDay[] {
   }
 
   return days;
-}
-
-function activityDateKey(activity: ApiActivity) {
-  return toDateKey(new Date(activity.startTime));
 }
 
 function timeOnly(value: string) {
@@ -143,6 +192,7 @@ export default function ItineraryActivities({
   endDate,
   locations,
   hasLocations,
+  onLocationAdded,
 }: ItineraryActivitiesProps) {
   const plannerDays = buildPlannerDays(startDate, endDate);
   const firstPlannerDate =
@@ -156,6 +206,13 @@ export default function ItineraryActivities({
   const [travelTimesLoading, setTravelTimesLoading] = useState(false);
   const [travelTimesError, setTravelTimesError] = useState<string | null>(null);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [recommendationsRefreshing, setRecommendationsRefreshing] =
+    useState(false);
+  const [excludedRecommendationIds, setExcludedRecommendationIds] = useState(
+    () => new Set<string>(),
+  );
+  const [recommendationRefreshCount, setRecommendationRefreshCount] =
+    useState(0);
   const [selectedDate, setSelectedDate] = useState(firstPlannerDate);
   const [activeRecommendationCategory, setActiveRecommendationCategory] =
     useState("All");
@@ -180,12 +237,16 @@ export default function ItineraryActivities({
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [movingActivityId, setMovingActivityId] = useState<string | null>(null);
+  const [reorderingActivities, setReorderingActivities] = useState(false);
+  const [editingActivity, setEditingActivity] = useState<ApiActivity | null>(null);
+  const [editingActivitySaving, setEditingActivitySaving] = useState(false);
   const [syncingSchedule, setSyncingSchedule] = useState(false);
   const [scheduleNotice, setScheduleNotice] = useState<string | null>(null);
   const [prayerTimes, setPrayerTimes] = useState<PrayerTimings | null>(null);
   const [prayerTimesLoading, setPrayerTimesLoading] = useState(false);
   const [prayerTimesError, setPrayerTimesError] = useState<string | null>(null);
   const [showPrayerTimes, setShowPrayerTimes] = useState(true);
+  const [travelMode, setTravelMode] = useState<TravelMode>("driving");
   const [error, setError] = useState<string | null>(null);
   const addressDebounceRef = useRef<number | null>(null);
 
@@ -201,6 +262,10 @@ export default function ItineraryActivities({
       )
       .finally(() => setLoading(false));
   };
+
+  useEffect(() => {
+    setTravelMode(getStoredTravelMode());
+  }, []);
 
   useEffect(() => {
     loadActivities();
@@ -261,6 +326,45 @@ export default function ItineraryActivities({
       .finally(() => setRecommendationsLoading(false));
   }, [tripId, hasLocations]);
 
+  async function handleRefreshRecommendations() {
+    if (!hasLocations || recommendationsRefreshing) return;
+
+    const currentIds =
+      recommendations?.rows.flatMap((row) =>
+        row.recommendations.map((place) => place.id),
+      ) ?? [];
+    const exclude = [
+      ...new Set([...excludedRecommendationIds, ...currentIds]),
+    ];
+    const nextRefreshCount = recommendationRefreshCount + 1;
+
+    setExcludedRecommendationIds(new Set(exclude));
+    setRecommendationRefreshCount(nextRefreshCount);
+    setRecommendationsRefreshing(true);
+    setError(null);
+
+    try {
+      const refreshed = await api.getActivityRecommendations(tripId, 5000, {
+        exclude,
+        extended: nextRefreshCount % 2 === 1,
+      });
+      setRecommendations(refreshed);
+      setActiveRecommendationCategory("All");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to refresh activity recommendations",
+      );
+    } finally {
+      setRecommendationsRefreshing(false);
+    }
+  }
+
+  function rememberExcludedRecommendation(placeId: string) {
+    setExcludedRecommendationIds((prev) => new Set([...prev, placeId]));
+  }
+
   useEffect(() => {
     const dayActivities = getActivitiesForDate(selectedDate);
     if (dayActivities.length < 2) {
@@ -272,7 +376,7 @@ export default function ItineraryActivities({
     setTravelTimesLoading(true);
     setTravelTimesError(null);
     api
-      .getActivityTravelTimes(tripId, selectedDate)
+      .getActivityTravelTimes(tripId, selectedDate, travelMode)
       .then((response) => setTravelTimeSegments(response.segments))
       .catch((err) => {
         setTravelTimeSegments([]);
@@ -281,7 +385,12 @@ export default function ItineraryActivities({
         );
       })
       .finally(() => setTravelTimesLoading(false));
-  }, [tripId, selectedDate, activities]);
+  }, [tripId, selectedDate, activities, travelMode]);
+
+  function handleTravelModeChange(mode: TravelMode) {
+    setTravelMode(mode);
+    storeTravelMode(mode);
+  }
 
   useEffect(() => {
     if (!hasLocations) {
@@ -349,9 +458,7 @@ export default function ItineraryActivities({
     dateKey: string,
     activityList: ApiActivity[] = activities,
   ) {
-    return activityList
-      .filter((activity) => activityDateKey(activity) === dateKey)
-      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    return getActivitiesOverlappingDate(activityList, dateKey);
   }
 
   function findOverlappingActivity(
@@ -392,29 +499,69 @@ export default function ItineraryActivities({
     };
   }
 
-  function showNextAvailableRecommendationTime(placeId: string) {
-    const nextSlot = findNextAvailableSlot();
+  function computeRecommendationTime(place: NearbyPlace) {
+    const suggested = suggestRecommendationTimeSlot({
+      place,
+      dateKey: selectedDate,
+      activities,
+      durationMinutes: DEFAULT_ACTIVITY_DURATION_MINUTES,
+    });
+    return {
+      startTime: suggested.startTime,
+      endTime: suggested.endTime,
+      scheduleNote: suggested.scheduleNote,
+      withinOpeningHours: suggested.withinOpeningHours,
+    };
+  }
+
+  function showNextAvailableRecommendationTime(place: NearbyPlace) {
+    const nextSlot = computeRecommendationTime(place);
     setRecommendationTimes((prev) => ({
       ...prev,
-      [placeId]: nextSlot,
+      [place.id]: {
+        startTime: nextSlot.startTime,
+        endTime: nextSlot.endTime,
+      },
     }));
     return nextSlot;
   }
 
-  function defaultRecommendationTime(placeId: string) {
-    return recommendationTimes[placeId] ?? findNextAvailableSlot();
+  function defaultRecommendationTime(place: NearbyPlace) {
+    if (recommendationTimes[place.id]) {
+      return recommendationTimes[place.id];
+    }
+    const suggested = computeRecommendationTime(place);
+    return {
+      startTime: suggested.startTime,
+      endTime: suggested.endTime,
+    };
+  }
+
+  function getRecommendationScheduleMeta(place: NearbyPlace) {
+    const suggested = computeRecommendationTime(place);
+    const stored = recommendationTimes[place.id];
+    const start = new Date(stored?.startTime ?? suggested.startTime);
+    const end = new Date(stored?.endTime ?? suggested.endTime);
+    const hoursCheck = isVisitWithinOpeningHours(place, start, end, selectedDate);
+
+    return {
+      scheduleNote: stored ? undefined : suggested.scheduleNote,
+      hoursLabel: getOpeningHoursLabel(place.openingHours, selectedDate),
+      outsideOpeningHours: !hoursCheck.ok,
+      openingHoursWarning: hoursCheck.ok ? null : hoursCheck.reason,
+    };
   }
 
   function updateRecommendationTime(
-    placeId: string,
+    place: NearbyPlace,
     field: "startTime" | "endTime",
     value: string,
   ) {
     setRecommendationTimes((prev) => ({
       ...prev,
-      [placeId]: {
-        ...defaultRecommendationTime(placeId),
-        ...prev[placeId],
+      [place.id]: {
+        ...defaultRecommendationTime(place),
+        ...prev[place.id],
         [field]: value,
       },
     }));
@@ -435,7 +582,32 @@ export default function ItineraryActivities({
         a.startTime.localeCompare(b.startTime),
       ),
     );
+    if (created.syncedLocation) {
+      onLocationAdded?.(created.syncedLocation);
+    }
     return created;
+  }
+
+  async function syncActivityToTripLocation(input: {
+    title: string;
+    address?: string;
+    latitude?: number;
+    longitude?: number;
+  }) {
+    const hasCoords = input.latitude != null && input.longitude != null;
+    const address = input.address?.trim() || input.title;
+    if (!hasCoords && !input.address?.trim()) return;
+
+    try {
+      const location = await api.addLocation(tripId, address, {
+        locationTitle: input.title,
+        latitude: hasCoords ? input.latitude : undefined,
+        longitude: hasCoords ? input.longitude : undefined,
+      });
+      onLocationAdded?.(location);
+    } catch (err) {
+      console.error("Failed to sync activity location:", err);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -490,7 +662,7 @@ export default function ItineraryActivities({
     place: NearbyPlace,
     sourceTitle: string,
   ) {
-    const time = defaultRecommendationTime(place.id);
+    const time = defaultRecommendationTime(place);
     const start = new Date(time.startTime);
     const end = new Date(time.endTime);
 
@@ -505,7 +677,7 @@ export default function ItineraryActivities({
 
     const overlappingActivity = findOverlappingActivity(start, end);
     if (overlappingActivity) {
-      const nextSlot = showNextAvailableRecommendationTime(place.id);
+      const nextSlot = showNextAvailableRecommendationTime(place);
       setError(
         `"${overlappingActivity.title}" already uses that time. Showing next available time: ${timeOnly(
           nextSlot.startTime,
@@ -534,6 +706,14 @@ export default function ItineraryActivities({
         startTime: start.toISOString(),
         endTime: end.toISOString(),
       });
+      if (!created.syncedLocation) {
+        await syncActivityToTripLocation({
+          title: place.name,
+          address: place.address || undefined,
+          latitude: place.latitude,
+          longitude: place.longitude,
+        });
+      }
       const nextSlot = findNextAvailableSlot(selectedDate, [
         ...activities,
         created,
@@ -542,6 +722,7 @@ export default function ItineraryActivities({
         ...prev,
         [place.id]: nextSlot,
       }));
+      rememberExcludedRecommendation(place.id);
     } catch (err) {
       setError(
         err instanceof Error
@@ -550,6 +731,116 @@ export default function ItineraryActivities({
       );
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleReorderActivities(orderedActivityIds: string[]) {
+    if (orderedActivityIds.length < 2) return;
+
+    const dayActivities = getActivitiesForDate(selectedDate);
+    const ordered = orderedActivityIds
+      .map((id) => dayActivities.find((activity) => activity.id === id))
+      .filter((activity): activity is ApiActivity => Boolean(activity));
+
+    if (ordered.length < 2) return;
+
+    setReorderingActivities(true);
+    setError(null);
+    setScheduleNotice(null);
+
+    try {
+      const travelResponse = await api.getActivityTravelTimes(
+        tripId,
+        selectedDate,
+        travelMode,
+        orderedActivityIds,
+      );
+      const updates = computeScheduleForOrderedActivities(
+        ordered,
+        travelResponse.segments,
+        selectedDate,
+      );
+
+      if (updates.length === 0) {
+        setScheduleNotice("Activities reordered. Times already fit the new route.");
+        setTravelTimeSegments(travelResponse.segments);
+        return;
+      }
+
+      const updatedActivities = await Promise.all(
+        updates.map((update) =>
+          api.updateActivity(tripId, update.activityId, {
+            startTime: update.startTime,
+            endTime: update.endTime,
+          }),
+        ),
+      );
+
+      const updatedById = new Map(
+        updatedActivities.map((activity) => [activity.id, activity]),
+      );
+      setActivities((prev) =>
+        prev
+          .map((activity) => updatedById.get(activity.id) ?? activity)
+          .sort((a, b) => a.startTime.localeCompare(b.startTime)),
+      );
+      setTravelTimeSegments(travelResponse.segments);
+      setScheduleNotice(
+        `Reordered ${ordered.length} activities and updated times with ${travelModeLabel(travelMode).toLowerCase()} gaps.`,
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to reorder activities",
+      );
+    } finally {
+      setReorderingActivities(false);
+    }
+  }
+
+  async function handleEditActivitySave(values: {
+    title: string;
+    description: string;
+    startTime: string;
+    endTime: string;
+    address: string;
+  }) {
+    if (!editingActivity) return;
+
+    const start = new Date(values.startTime);
+    const end = new Date(values.endTime);
+    if (
+      Number.isNaN(start.getTime()) ||
+      Number.isNaN(end.getTime()) ||
+      end <= start
+    ) {
+      setError("Choose a valid start and end time.");
+      return;
+    }
+
+    setEditingActivitySaving(true);
+    setError(null);
+
+    try {
+      const updated = await api.updateActivity(tripId, editingActivity.id, {
+        title: values.title,
+        description: values.description || undefined,
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+        address: values.address || undefined,
+      });
+      setActivities((prev) =>
+        prev
+          .map((activity) => (activity.id === updated.id ? updated : activity))
+          .sort((a, b) => a.startTime.localeCompare(b.startTime)),
+      );
+      setEditingActivity(null);
+      setScheduleNotice(`Updated "${updated.title}".`);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to update activity",
+      );
+    } finally {
+      setEditingActivitySaving(false);
     }
   }
 
@@ -585,7 +876,7 @@ export default function ItineraryActivities({
 
     if (updates.length === 0) {
       setScheduleNotice(
-        "Schedule already leaves room for travel, or driving estimates are unavailable.",
+        "Every stop already has enough travel time. Your free-time gaps are kept.",
       );
       return;
     }
@@ -593,12 +884,12 @@ export default function ItineraryActivities({
     const summary = updates
       .map(
         (update) =>
-          `${update.title}: +${update.travelMinutes} min travel before start`,
+          `${update.title}: move later by ${update.travelMinutes} min travel`,
       )
       .join("\n");
 
     const confirmed = window.confirm(
-      `Shift ${updates.length} later activit${updates.length === 1 ? "y" : "ies"} to include driving time between stops?\n\n${summary}`,
+      `Only ${updates.length} activit${updates.length === 1 ? "y" : "ies"} with too little travel time will move. Free-time gaps stay as they are.\n\n${summary}`,
     );
     if (!confirmed) return;
 
@@ -625,7 +916,7 @@ export default function ItineraryActivities({
           .sort((a, b) => a.startTime.localeCompare(b.startTime)),
       );
       setScheduleNotice(
-        `Updated ${updates.length} activit${updates.length === 1 ? "y" : "ies"} to include travel time between stops.`,
+        `Updated ${updates.length} activit${updates.length === 1 ? "y" : "ies"} that needed more travel time. Free-time gaps were kept.`,
       );
     } catch (err) {
       setError(
@@ -692,25 +983,41 @@ export default function ItineraryActivities({
     handleAssignDay(dateKey);
   }
 
-  const recommendationCategories = recommendations
-    ? [
-        "All",
-        ...Array.from(
-          new Set(
-            recommendations.rows
-              .flatMap((row) => row.recommendations)
-              .map((place) => place.category)
-              .filter((category): category is string => Boolean(category)),
-          ),
+  const visibleRecommendations = useMemo(() => {
+    if (!recommendations) return null;
+    return {
+      ...recommendations,
+      rows: filterRecommendationRows(
+        recommendations.rows,
+        activities,
+        locations,
+        excludedRecommendationIds,
+      ),
+    };
+  }, [recommendations, activities, locations, excludedRecommendationIds]);
+
+  const recommendationCategories = visibleRecommendations
+    ? buildRecommendationCategories(
+        visibleRecommendations.rows.flatMap((row) =>
+          row.recommendations.map((place) => place.category),
         ),
-      ]
+      )
     : ["All"];
+  const visibleRecommendationCount =
+    visibleRecommendations?.rows.reduce(
+      (count, row) => count + row.recommendations.length,
+      0,
+    ) ?? 0;
+  const rawRecommendationCount =
+    recommendations?.rows.reduce(
+      (count, row) => count + row.recommendations.length,
+      0,
+    ) ?? 0;
   const selectedDay =
     plannerDays.find((day) => day.dateKey === selectedDate) ?? plannerDays[0];
-  const activitiesByDate = activities.reduce<Record<string, ApiActivity[]>>(
-    (groups, activity) => {
-      const key = activityDateKey(activity);
-      groups[key] = [...(groups[key] ?? []), activity];
+  const activitiesByDate = plannerDays.reduce<Record<string, ApiActivity[]>>(
+    (groups, day) => {
+      groups[day.dateKey] = getActivitiesOverlappingDate(activities, day.dateKey);
       return groups;
     },
     {},
@@ -731,7 +1038,10 @@ export default function ItineraryActivities({
     travelTimeSegments,
   );
   const unplannedActivities = activities.filter(
-    (activity) => !plannerDays.some((day) => day.dateKey === activityDateKey(activity)),
+    (activity) =>
+      !plannerDays.some((day) =>
+        getActivitiesOverlappingDate([activity], day.dateKey).length > 0,
+      ),
   );
   const sortedLocations = [...locations].sort((a, b) => a.order - b.order);
 
@@ -836,31 +1146,50 @@ export default function ItineraryActivities({
                 {prayerTimes ? ` · ${prayerTimes.timezone}` : ""}
               </p>
               <p className='mt-1 text-xs text-gray-500'>
-                Activities in the center, drive gaps between them, prayer times in
-                the Salah column on the right.
+                Activities stack in order with travel info on each card. Nearby
+                stops automatically use walking. Prayer times appear on the
+                right.
               </p>
             </div>
             <div className='flex flex-wrap items-center gap-3'>
               {selectedActivities.length >= 2 && (
-                <Button
-                  type='button'
-                  variant='outline'
-                  size='sm'
-                  className='gap-2'
-                  disabled={
-                    syncingSchedule ||
-                    travelTimesLoading ||
-                    pendingTravelAdjustments.length === 0
-                  }
-                  onClick={handleSyncScheduleWithTravel}
-                >
-                  <Car className='h-4 w-4' />
-                  {syncingSchedule
-                    ? "Adjusting..."
-                    : pendingTravelAdjustments.length > 0
-                      ? `Add travel gaps (${pendingTravelAdjustments.length})`
-                      : "Travel gaps applied"}
-                </Button>
+                <>
+                  <label className='flex items-center gap-2 text-xs font-medium text-gray-600'>
+                    <span className='hidden sm:inline'>Travel by</span>
+                    <select
+                      value={travelMode}
+                      onChange={(e) =>
+                        handleTravelModeChange(e.target.value as TravelMode)
+                      }
+                      className='rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs'
+                    >
+                      {TRAVEL_MODE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    className='gap-2'
+                    disabled={
+                      syncingSchedule ||
+                      travelTimesLoading ||
+                      pendingTravelAdjustments.length === 0
+                    }
+                    onClick={handleSyncScheduleWithTravel}
+                  >
+                    <Route className='h-4 w-4' />
+                    {syncingSchedule
+                      ? "Adjusting..."
+                      : pendingTravelAdjustments.length > 0
+                        ? `Add travel gaps (${pendingTravelAdjustments.length})`
+                        : "Travel gaps applied"}
+                  </Button>
+                </>
               )}
               {hasLocations && (
                 <label className='flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800'>
@@ -906,17 +1235,21 @@ export default function ItineraryActivities({
             </div>
           ) : (
             <PlannerStretchTimeline
+              tripId={tripId}
               dateKey={selectedDate}
               activities={selectedActivities}
               prayerTimes={prayerTimes}
               showPrayerTimes={showPrayerTimes}
               plannerDays={plannerDays}
               travelTimeByFromActivity={travelTimeByFromActivity}
-              travelTimesLoading={travelTimesLoading}
+              travelTimesLoading={travelTimesLoading || reorderingActivities}
               travelTimesError={travelTimesError}
               movingActivityId={movingActivityId}
+              reorderingActivities={reorderingActivities}
               onMoveActivity={handleMoveActivity}
               onDeleteActivity={handleDelete}
+              onEditActivity={setEditingActivity}
+              onReorderActivities={handleReorderActivities}
             />
           )}
 
@@ -1065,6 +1398,14 @@ export default function ItineraryActivities({
       {error && <p className='text-red-600'>{error}</p>}
       {loading && <p className='text-gray-500'>Loading activities...</p>}
 
+      <ActivityEditDialog
+        activity={editingActivity}
+        open={editingActivity != null}
+        saving={editingActivitySaving}
+        onClose={() => setEditingActivity(null)}
+        onSave={handleEditActivitySave}
+      />
+
       <section className='rounded-lg border border-blue-100 bg-blue-50/40 p-4'>
         <div className='mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
           <div>
@@ -1072,12 +1413,33 @@ export default function ItineraryActivities({
               Recommended activities
             </h3>
             <p className='text-sm text-gray-600'>
-              Suggestions are based on your saved trip locations. New picks go
-              to {selectedDay?.label ?? "the selected day"} (
+              Suggestions are based on your saved trip locations. Places already
+              in your itinerary are hidden automatically. New picks go to{" "}
+              {selectedDay?.label ?? "the selected day"} (
               {selectedDay?.shortDate ?? selectedDate}).
             </p>
           </div>
-          <div className='sm:w-64'>
+          <div className='flex flex-col gap-2 sm:items-end'>
+            <Button
+              type='button'
+              size='sm'
+              variant='outline'
+              disabled={
+                !hasLocations || recommendationsLoading || recommendationsRefreshing
+              }
+              onClick={handleRefreshRecommendations}
+              className='gap-2'
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${
+                  recommendationsRefreshing ? "animate-spin" : ""
+                }`}
+              />
+              {recommendationsRefreshing
+                ? "Finding new ideas..."
+                : "Suggest new recommendations"}
+            </Button>
+            <div className='sm:w-64'>
             <label
               htmlFor='recommendation-day'
               className='mb-1 block text-xs font-medium text-gray-600'
@@ -1096,6 +1458,7 @@ export default function ItineraryActivities({
                 </option>
               ))}
             </select>
+            </div>
           </div>
         </div>
 
@@ -1106,14 +1469,40 @@ export default function ItineraryActivities({
           </p>
         ) : recommendationsLoading ? (
           <p className='text-sm text-gray-500'>Loading recommendations...</p>
-        ) : !recommendations ? (
+        ) : !visibleRecommendations ? (
           <p className='text-sm text-gray-500'>
             No recommendations loaded yet.
           </p>
+        ) : visibleRecommendationCount === 0 ? (
+          <div className='rounded-lg border border-blue-100 bg-white p-4 text-sm text-gray-600'>
+            {rawRecommendationCount > 0 ? (
+              <>
+                All current suggestions are already in your itinerary or saved
+                places. Try suggesting new recommendations for different ideas.
+              </>
+            ) : (
+              <>No new recommendations found near your trip locations right now.</>
+            )}
+            <Button
+              type='button'
+              size='sm'
+              variant='outline'
+              className='mt-3 gap-2'
+              disabled={recommendationsRefreshing}
+              onClick={handleRefreshRecommendations}
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${
+                  recommendationsRefreshing ? "animate-spin" : ""
+                }`}
+              />
+              Suggest new recommendations
+            </Button>
+          </div>
         ) : (
           <div className='space-y-5'>
             <p className='rounded-lg bg-white p-3 text-sm text-blue-800'>
-              {recommendations.note}
+              {visibleRecommendations.note}
             </p>
             <div className='flex gap-2 overflow-x-auto pb-1'>
               {recommendationCategories.map((category) => (
@@ -1131,7 +1520,7 @@ export default function ItineraryActivities({
                 </button>
               ))}
             </div>
-            {recommendations.rows.map((row) => (
+            {visibleRecommendations.rows.map((row) => (
               <div
                 key={row.sourceLocation.id}
                 className='rounded-lg border border-blue-100 bg-white p-4'
@@ -1168,7 +1557,8 @@ export default function ItineraryActivities({
                   return (
                     <div className='grid gap-3 lg:grid-cols-2'>
                       {filteredRecommendations.slice(0, 6).map((place) => {
-                        const time = defaultRecommendationTime(place.id);
+                        const time = defaultRecommendationTime(place);
+                        const scheduleMeta = getRecommendationScheduleMeta(place);
                         const selectedStart = new Date(time.startTime);
                         const selectedEnd = new Date(time.endTime);
                         const overlappingActivity =
@@ -1177,7 +1567,7 @@ export default function ItineraryActivities({
                             ? null
                             : findOverlappingActivity(selectedStart, selectedEnd);
                         const nextAvailableTime = overlappingActivity
-                          ? findNextAvailableSlot()
+                          ? computeRecommendationTime(place)
                           : null;
 
                         return (
@@ -1207,6 +1597,20 @@ export default function ItineraryActivities({
                               {place.rating != null && (
                                 <span>Rating {place.rating.toFixed(1)}</span>
                               )}
+                              {scheduleMeta.hoursLabel && (
+                                <span>{scheduleMeta.hoursLabel}</span>
+                              )}
+                              {place.openNow != null && (
+                                <span
+                                  className={
+                                    place.openNow
+                                      ? "text-emerald-700"
+                                      : "text-amber-700"
+                                  }
+                                >
+                                  {place.openNow ? "Open now" : "Closed now"}
+                                </span>
+                              )}
                               <a
                                 href={`https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}`}
                                 target='_blank'
@@ -1222,7 +1626,7 @@ export default function ItineraryActivities({
                                 value={time.startTime}
                                 onChange={(e) =>
                                   updateRecommendationTime(
-                                    place.id,
+                                    place,
                                     "startTime",
                                     e.target.value,
                                   )
@@ -1234,7 +1638,7 @@ export default function ItineraryActivities({
                                 value={time.endTime}
                                 onChange={(e) =>
                                   updateRecommendationTime(
-                                    place.id,
+                                    place,
                                     "endTime",
                                     e.target.value,
                                   )
@@ -1242,11 +1646,21 @@ export default function ItineraryActivities({
                                 className='rounded-lg border border-gray-300 p-2 text-sm'
                               />
                             </div>
+                            {scheduleMeta.scheduleNote && (
+                              <p className='mt-2 rounded-lg bg-blue-50 p-2 text-xs text-blue-800'>
+                                {scheduleMeta.scheduleNote}
+                              </p>
+                            )}
+                            {scheduleMeta.openingHoursWarning && (
+                              <p className='mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-700'>
+                                {scheduleMeta.openingHoursWarning}
+                              </p>
+                            )}
                             {overlappingActivity && nextAvailableTime && (
                               <p className='mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-700'>
                                 This time is unavailable because it overlaps
-                                with "{overlappingActivity.title}". Next
-                                available: {timeOnly(nextAvailableTime.startTime)}{" "}
+                                with "{overlappingActivity.title}". Suggested
+                                time: {timeOnly(nextAvailableTime.startTime)}{" "}
                                 - {timeOnly(nextAvailableTime.endTime)}.
                               </p>
                             )}

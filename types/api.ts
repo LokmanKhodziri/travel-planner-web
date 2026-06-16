@@ -5,7 +5,17 @@ export interface ApiUser {
   email: string;
   name: string | null;
   image: string | null;
+  homeCity?: string | null;
+  timezone?: string | null;
   role: "USER" | "ADMIN";
+  createAt?: string;
+  hasPassword?: boolean;
+  stats?: {
+    trips: number;
+    activities: number;
+    locations: number;
+    upcomingTrips: number;
+  };
 }
 
 export interface ApiLocation {
@@ -49,6 +59,29 @@ export interface ApiActivity {
   order: number;
   createAt: string;
   updateAt: string | null;
+  syncedLocation?: ApiLocation | null;
+}
+
+export type ExpenseCategory =
+  | "TRANSPORT"
+  | "ACCOMMODATION"
+  | "FOOD"
+  | "ACTIVITIES"
+  | "SHOPPING"
+  | "OTHER";
+
+export interface ApiExpense {
+  id: string;
+  tripId: string;
+  title: string;
+  amount: number;
+  currency: string;
+  category: ExpenseCategory;
+  expenseDate: string;
+  notes: string | null;
+  activityId: string | null;
+  createAt: string;
+  updateAt: string | null;
 }
 
 export interface PrayerTimings {
@@ -63,6 +96,19 @@ export interface PrayerTimings {
   };
 }
 
+export interface PlaceOpeningPeriod {
+  openDay: number;
+  openTime: string;
+  closeDay: number;
+  closeTime?: string;
+}
+
+export interface PlaceOpeningHours {
+  openNow?: boolean;
+  weekdayText?: string[];
+  periods?: PlaceOpeningPeriod[];
+}
+
 export interface NearbyPlace {
   id: string;
   name: string;
@@ -72,6 +118,7 @@ export interface NearbyPlace {
   rating?: number;
   userRatingsTotal?: number;
   openNow?: boolean;
+  openingHours?: PlaceOpeningHours;
   category?: string;
   about: string;
 }
@@ -94,6 +141,8 @@ export interface ActivityRecommendationsResponse {
   rows: ActivityRecommendationRow[];
 }
 
+export type TravelMode = "walking" | "driving" | "transit";
+
 export interface ActivityTravelTimeSegment {
   fromActivityId: string;
   fromTitle: string;
@@ -104,12 +153,16 @@ export interface ActivityTravelTimeSegment {
     distanceMeters: number;
     durationText: string;
     durationSeconds: number;
+    mode: TravelMode;
+    modeLabel: string;
+    autoWalk: boolean;
   } | null;
   error: string | null;
 }
 
 export interface ActivityTravelTimesResponse {
   date: string | null;
+  mode?: TravelMode;
   segments: ActivityTravelTimeSegment[];
 }
 

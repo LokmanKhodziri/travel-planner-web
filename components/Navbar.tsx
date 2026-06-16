@@ -97,6 +97,9 @@ export default function Navbar({ session }: { session: ApiUser | null }) {
                   <Link href='/globe' className={navLinkClass("/globe")}>
                     Globe
                   </Link>
+                  <Link href='/profile' className={navLinkClass("/profile")}>
+                    Profile
+                  </Link>
                   {sessionState.role === "ADMIN" && (
                     <Link href='/admin' className={navLinkClass("/admin")}>
                       Admin
@@ -136,6 +139,13 @@ export default function Navbar({ session }: { session: ApiUser | null }) {
               onClick={() => setMenuOpen(false)}
             >
               Globe
+            </Link>
+            <Link
+              href='/profile'
+              className={navLinkClass("/profile")}
+              onClick={() => setMenuOpen(false)}
+            >
+              Profile
             </Link>
             {sessionState.role === "ADMIN" && (
               <Link

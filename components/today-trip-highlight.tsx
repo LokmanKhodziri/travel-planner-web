@@ -2,6 +2,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { ApiActivity, ApiLocation, ApiTrip, PrayerTimings } from "@/types/api";
 import {
+  getTotalTripDays,
+  getTripDayNumber,
+  localDateKey,
+} from "@/lib/trip-dates";
+import {
   ArrowRight,
   CalendarDays,
   Clock,
@@ -19,29 +24,6 @@ interface TodayTripHighlightProps {
 }
 
 const PRAYER_ORDER = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"] as const;
-
-function localDateKey(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function getTripDayNumber(startDate: string, today: Date) {
-  const start = new Date(startDate);
-  start.setHours(0, 0, 0, 0);
-  const cursor = new Date(today);
-  cursor.setHours(0, 0, 0, 0);
-  return Math.floor((cursor.getTime() - start.getTime()) / 86_400_000) + 1;
-}
-
-function getTotalTripDays(startDate: string, endDate: string) {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  start.setHours(0, 0, 0, 0);
-  end.setHours(0, 0, 0, 0);
-  return Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1;
-}
 
 function timeLabel(value: string) {
   return new Date(value).toLocaleTimeString("en-GB", {
