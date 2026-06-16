@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type {
   ActivityRecommendationsResponse,
@@ -13,7 +13,8 @@ import type {
 } from "@/types/api";
 import { formatDateTime } from "@/lib/utils";
 import { Button } from "./ui/button";
-import { CalendarDays, Clock, MapPin, Moon, Sparkles } from "lucide-react";
+import PlannerStretchTimeline from "./planner-stretch-timeline";
+import { CalendarDays, MapPin, Sparkles } from "lucide-react";
 
 interface ItineraryActivitiesProps {
   tripId: string;
@@ -35,24 +36,6 @@ interface PlannerDay {
 
 const DEFAULT_ACTIVITY_DURATION_MINUTES = 120;
 const PLANNER_DAY_START_HOUR = 9;
-const PRAYER_ORDER = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"] as const;
-
-type TimelinePrayerItem = {
-  type: "prayer";
-  key: string;
-  name: (typeof PRAYER_ORDER)[number];
-  time: string;
-  sortTime: Date;
-};
-
-type TimelineActivityItem = {
-  type: "activity";
-  key: string;
-  activity: ApiActivity;
-  sortTime: Date;
-};
-
-type TimelineItem = TimelinePrayerItem | TimelineActivityItem;
 
 function toDateKey(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -151,59 +134,6 @@ function activityDurationMinutes(activity: ApiActivity) {
     DEFAULT_ACTIVITY_DURATION_MINUTES,
     Math.round(durationMs / 60000),
   );
-}
-
-function parsePrayerDateTime(dateKey: string, time: string) {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  const [hours, minutes] = time.split(":").map(Number);
-  return new Date(year, month - 1, day, hours, minutes);
-}
-
-function buildTimelineItems(
-  dateKey: string,
-  dayActivities: ApiActivity[],
-  prayerTimes: PrayerTimings | null,
-  includePrayers: boolean,
-): TimelineItem[] {
-  const activityItems: TimelineActivityItem[] = dayActivities.map(
-    (activity) => ({
-      type: "activity",
-      key: activity.id,
-      activity,
-      sortTime: new Date(activity.startTime),
-    }),
-  );
-
-  if (!includePrayers || !prayerTimes) {
-    return activityItems;
-  }
-
-  const prayerItems: TimelinePrayerItem[] = PRAYER_ORDER.map((name) => ({
-    type: "prayer",
-    key: `prayer-${dateKey}-${name}`,
-    name,
-    time: prayerTimes.timings[name],
-    sortTime: parsePrayerDateTime(dateKey, prayerTimes.timings[name]),
-  }));
-
-  return [...activityItems, ...prayerItems].sort(
-    (a, b) => a.sortTime.getTime() - b.sortTime.getTime(),
-  );
-}
-
-function getOverlappingPrayers(
-  activity: ApiActivity,
-  prayerTimes: PrayerTimings | null,
-  dateKey: string,
-) {
-  if (!prayerTimes) return [];
-
-  return PRAYER_ORDER.filter((name) => {
-    const prayerAt = parsePrayerDateTime(dateKey, prayerTimes.timings[name]);
-    const start = new Date(activity.startTime);
-    const end = new Date(activity.endTime);
-    return start <= prayerAt && prayerAt <= end;
-  });
 }
 
 export default function ItineraryActivities({
@@ -723,12 +653,9 @@ export default function ItineraryActivities({
   const travelTimeByFromActivity = new Map(
     travelTimeSegments.map((segment) => [segment.fromActivityId, segment]),
   );
-  const timelineItems = buildTimelineItems(
-    selectedDate,
-    selectedActivities,
-    prayerTimes,
-    showPrayerTimes,
-  );
+  const hasTimelineContent =
+    selectedActivities.length > 0 ||
+    (showPrayerTimes && prayerTimes != null);
   const unplannedActivities = activities.filter(
     (activity) => !plannerDays.some((day) => day.dateKey === activityDateKey(activity)),
   );
@@ -834,6 +761,9 @@ export default function ItineraryActivities({
                 {selectedDay?.shortDate ?? selectedDate}
                 {prayerTimes ? ` · ${prayerTimes.timezone}` : ""}
               </p>
+              <p className='mt-1 text-xs text-gray-500'>
+                Blocks stretch by duration; prayers stack inside overlapping plans.
+              </p>
             </div>
             <div className='flex flex-wrap items-center gap-3'>
               {hasLocations && (
@@ -858,7 +788,7 @@ export default function ItineraryActivities({
             <p className='text-sm text-gray-500'>
               {loading ? "Loading activities..." : "Loading prayer times..."}
             </p>
-          ) : timelineItems.length === 0 ? (
+          ) : !hasTimelineContent ? (
             <div className='rounded-lg border border-dashed border-gray-300 bg-gray-50 p-6 text-center'>
               <p className='font-medium text-gray-700'>
                 No activities planned for this day yet.
@@ -873,170 +803,19 @@ export default function ItineraryActivities({
               )}
             </div>
           ) : (
-            <ol className='space-y-3'>
-              {(() => {
-                let lastActivity: ApiActivity | null = null;
-                let activityNumber = 0;
-
-                return timelineItems.map((item) => {
-                  if (item.type === "prayer") {
-                    return (
-                      <li
-                        key={item.key}
-                        className='relative rounded-lg border border-emerald-200 bg-emerald-50 p-4 pl-16'
-                      >
-                        <div className='absolute left-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white'>
-                          <Moon className='h-4 w-4' />
-                        </div>
-                        <p className='font-semibold text-emerald-900'>
-                          {item.name}
-                        </p>
-                        <p className='mt-1 flex items-center gap-2 text-sm text-emerald-800'>
-                          <Clock className='h-4 w-4' />
-                          {item.time}
-                        </p>
-                        <p className='mt-1 text-xs text-emerald-700'>
-                          Prayer time
-                        </p>
-                      </li>
-                    );
-                  }
-
-                  const activity = item.activity;
-                  activityNumber += 1;
-                  const travelSegment = lastActivity
-                    ? travelTimeByFromActivity.get(lastActivity.id)
-                    : null;
-                  const showTravel =
-                    lastActivity != null &&
-                    travelSegment?.toActivityId === activity.id;
-                  const overlappingPrayers = getOverlappingPrayers(
-                    activity,
-                    prayerTimes,
-                    selectedDate,
-                  );
-
-                  const activityCard = (
-                    <li
-                      key={activity.id}
-                      className='relative rounded-lg border border-gray-200 bg-gray-50 p-4 pl-16'
-                    >
-                      <div className='absolute left-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white'>
-                        {activityNumber}
-                      </div>
-                      <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
-                        <div>
-                          <p className='font-semibold text-gray-900'>
-                            {activity.title}
-                          </p>
-                          {activity.description && (
-                            <p className='mt-1 text-sm text-gray-600'>
-                              {activity.description}
-                            </p>
-                          )}
-                          <p className='mt-2 flex items-center gap-2 text-sm text-gray-500'>
-                            <Clock className='h-4 w-4' />
-                            {timeOnly(activity.startTime)} -{" "}
-                            {timeOnly(activity.endTime)}
-                          </p>
-                          {overlappingPrayers.length > 0 && (
-                            <p className='mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800'>
-                              Overlaps with {overlappingPrayers.join(", ")} prayer
-                              {overlappingPrayers.length > 1 ? " times" : " time"}.
-                              Consider rescheduling around salah.
-                            </p>
-                          )}
-                          {activity.address ? (
-                            <p className='mt-2 flex items-start gap-2 text-sm text-gray-600'>
-                              <MapPin className='mt-0.5 h-4 w-4 shrink-0' />
-                              <span>{activity.address}</span>
-                            </p>
-                          ) : null}
-                          {activity.latitude != null &&
-                          activity.longitude != null ? (
-                            <a
-                              href={`https://www.google.com/maps/search/?api=1&query=${activity.latitude},${activity.longitude}`}
-                              target='_blank'
-                              rel='noreferrer'
-                              className='mt-2 inline-block text-xs text-blue-600 hover:underline'
-                            >
-                              View on Maps
-                            </a>
-                          ) : activity.address ? (
-                            <p className='mt-2 text-xs text-amber-700'>
-                              Coordinates not saved yet for travel-time
-                              estimates.
-                            </p>
-                          ) : (
-                            <p className='mt-2 text-xs text-amber-700'>
-                              No location saved for travel-time estimates.
-                            </p>
-                          )}
-                        </div>
-                        <div className='flex flex-col items-stretch gap-2 sm:items-end'>
-                          <label className='text-xs font-medium text-gray-500'>
-                            Move to day
-                          </label>
-                          <select
-                            value={activityDateKey(activity)}
-                            onChange={(e) =>
-                              handleMoveActivity(activity, e.target.value)
-                            }
-                            disabled={movingActivityId === activity.id}
-                            className='rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm'
-                          >
-                            {plannerDays.map((day) => (
-                              <option key={day.dateKey} value={day.dateKey}>
-                                {day.label} · {day.shortDate}
-                              </option>
-                            ))}
-                          </select>
-                          <Button
-                            variant='destructive'
-                            size='sm'
-                            onClick={() =>
-                              handleDelete(activity.id, activity.title)
-                            }
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </div>
-                    </li>
-                  );
-
-                  const result = (
-                    <Fragment key={activity.id}>
-                      {showTravel && (
-                        <li className='ml-16 rounded-lg border border-dashed border-blue-200 bg-blue-50/60 p-3 text-sm text-blue-800'>
-                          {travelTimesLoading ? (
-                            <span>
-                              Calculating travel time to next activity...
-                            </span>
-                          ) : travelSegment?.estimate ? (
-                            <span>
-                              Travel to {travelSegment.toTitle}:{" "}
-                              <strong>{travelSegment.estimate.durationText}</strong>{" "}
-                              by car ({travelSegment.estimate.distanceText})
-                            </span>
-                          ) : travelSegment?.error ? (
-                            <span>{travelSegment.error}</span>
-                          ) : travelTimesError ? (
-                            <span>{travelTimesError}</span>
-                          ) : (
-                            <span>Travel time unavailable for this segment.</span>
-                          )}
-                        </li>
-                      )}
-                      {activityCard}
-                    </Fragment>
-                  );
-
-                  lastActivity = activity;
-                  return result;
-                });
-              })()}
-            </ol>
+            <PlannerStretchTimeline
+              dateKey={selectedDate}
+              activities={selectedActivities}
+              prayerTimes={prayerTimes}
+              showPrayerTimes={showPrayerTimes}
+              plannerDays={plannerDays}
+              travelTimeByFromActivity={travelTimeByFromActivity}
+              travelTimesLoading={travelTimesLoading}
+              travelTimesError={travelTimesError}
+              movingActivityId={movingActivityId}
+              onMoveActivity={handleMoveActivity}
+              onDeleteActivity={handleDelete}
+            />
           )}
 
           {prayerTimesError && showPrayerTimes && (
