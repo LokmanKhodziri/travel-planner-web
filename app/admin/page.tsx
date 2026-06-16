@@ -236,7 +236,7 @@ export default async function AdminPage() {
       <div className="mx-auto max-w-3xl px-6 py-16 text-center">
         <h1 className="text-2xl font-bold text-gray-900">Admin access required</h1>
         <p className="mt-2 text-gray-600">Your account does not have permission to view this page.</p>
-        <Link href="/trips" className="mt-6 inline-block rounded-lg bg-gray-900 px-4 py-2 text-white">
+        <Link href="/dashboard" className="mt-6 inline-block rounded-lg bg-gray-900 px-4 py-2 text-white">
           Back to trips
         </Link>
       </div>

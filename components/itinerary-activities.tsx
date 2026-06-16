@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type {
   ActivityRecommendationsResponse,
@@ -8,10 +8,14 @@ import type {
   ApiActivity,
   ApiLocation,
   NearbyPlace,
+  PlaceSuggestion,
+  PrayerTimings,
 } from "@/types/api";
 import { formatDateTime } from "@/lib/utils";
+import { computeTravelAdjustedSchedule } from "@/lib/planner-schedule";
 import { Button } from "./ui/button";
-import { CalendarDays, Clock, MapPin } from "lucide-react";
+import PlannerStretchTimeline from "./planner-stretch-timeline";
+import { CalendarDays, Car, MapPin, Sparkles } from "lucide-react";
 
 interface ItineraryActivitiesProps {
   tripId: string;
@@ -107,6 +111,32 @@ function timeRangesOverlap(
   return start < existingEnd && end > existingStart;
 }
 
+function findSuggestedDay(
+  plannerDays: PlannerDay[],
+  activities: ApiActivity[],
+): string {
+  if (plannerDays.length === 0) return "";
+
+  return plannerDays.reduce((best, day) => {
+    const bestCount = activities.filter(
+      (activity) => activityDateKey(activity) === best.dateKey,
+    ).length;
+    const dayCount = activities.filter(
+      (activity) => activityDateKey(activity) === day.dateKey,
+    ).length;
+    return dayCount < bestCount ? day : best;
+  }).dateKey;
+}
+
+function activityDurationMinutes(activity: ApiActivity) {
+  const durationMs =
+    new Date(activity.endTime).getTime() - new Date(activity.startTime).getTime();
+  return Math.max(
+    DEFAULT_ACTIVITY_DURATION_MINUTES,
+    Math.round(durationMs / 60000),
+  );
+}
+
 export default function ItineraryActivities({
   tripId,
   startDate,
@@ -131,6 +161,17 @@ export default function ItineraryActivities({
     useState("All");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [activityLocationId, setActivityLocationId] = useState("");
+  const [activityAddress, setActivityAddress] = useState("");
+  const [activityLatitude, setActivityLatitude] = useState<number | null>(null);
+  const [activityLongitude, setActivityLongitude] = useState<number | null>(
+    null,
+  );
+  const [addressSuggestions, setAddressSuggestions] = useState<
+    PlaceSuggestion[]
+  >([]);
+  const [addressSuggestionsLoading, setAddressSuggestionsLoading] =
+    useState(false);
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [recommendationTimes, setRecommendationTimes] = useState<
@@ -138,7 +179,15 @@ export default function ItineraryActivities({
   >({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [movingActivityId, setMovingActivityId] = useState<string | null>(null);
+  const [syncingSchedule, setSyncingSchedule] = useState(false);
+  const [scheduleNotice, setScheduleNotice] = useState<string | null>(null);
+  const [prayerTimes, setPrayerTimes] = useState<PrayerTimings | null>(null);
+  const [prayerTimesLoading, setPrayerTimesLoading] = useState(false);
+  const [prayerTimesError, setPrayerTimesError] = useState<string | null>(null);
+  const [showPrayerTimes, setShowPrayerTimes] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const addressDebounceRef = useRef<number | null>(null);
 
   const loadActivities = () => {
     setLoading(true);
@@ -162,7 +211,38 @@ export default function ItineraryActivities({
     setStartTime("");
     setEndTime("");
     setRecommendationTimes({});
+    resetActivityLocation();
   }, [firstPlannerDate, tripId]);
+
+  useEffect(() => {
+    const trimmedAddress = activityAddress.trim();
+    if (activityLocationId || trimmedAddress.length < 2) {
+      setAddressSuggestions([]);
+      return;
+    }
+
+    setAddressSuggestionsLoading(true);
+    if (addressDebounceRef.current) {
+      window.clearTimeout(addressDebounceRef.current);
+    }
+
+    addressDebounceRef.current = window.setTimeout(async () => {
+      try {
+        const results = await api.searchPlaces(trimmedAddress);
+        setAddressSuggestions(results);
+      } catch {
+        setAddressSuggestions([]);
+      } finally {
+        setAddressSuggestionsLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      if (addressDebounceRef.current) {
+        window.clearTimeout(addressDebounceRef.current);
+      }
+    };
+  }, [activityAddress, activityLocationId]);
 
   useEffect(() => {
     if (!hasLocations) return;
@@ -203,6 +283,68 @@ export default function ItineraryActivities({
       .finally(() => setTravelTimesLoading(false));
   }, [tripId, selectedDate, activities]);
 
+  useEffect(() => {
+    if (!hasLocations) {
+      setPrayerTimes(null);
+      setPrayerTimesError(null);
+      return;
+    }
+
+    setPrayerTimesLoading(true);
+    setPrayerTimesError(null);
+    api
+      .getPrayerTimes(tripId, selectedDate)
+      .then(setPrayerTimes)
+      .catch((err) => {
+        setPrayerTimes(null);
+        setPrayerTimesError(
+          err instanceof Error ? err.message : "Failed to load prayer times",
+        );
+      })
+      .finally(() => setPrayerTimesLoading(false));
+  }, [tripId, selectedDate, hasLocations]);
+
+  function resetActivityLocation() {
+    setActivityLocationId("");
+    setActivityAddress("");
+    setActivityLatitude(null);
+    setActivityLongitude(null);
+    setAddressSuggestions([]);
+  }
+
+  function handleSelectSavedLocation(locationId: string) {
+    setActivityLocationId(locationId);
+    if (!locationId) {
+      setActivityAddress("");
+      setActivityLatitude(null);
+      setActivityLongitude(null);
+      return;
+    }
+
+    const location = locations.find((item) => item.id === locationId);
+    if (!location) return;
+
+    setActivityAddress(location.locationTitle);
+    setActivityLatitude(location.latitude);
+    setActivityLongitude(location.longitude);
+    setAddressSuggestions([]);
+  }
+
+  function handleActivityAddressChange(value: string) {
+    setActivityLocationId("");
+    setActivityAddress(value);
+    setActivityLatitude(null);
+    setActivityLongitude(null);
+  }
+
+  function handleSelectAddressSuggestion(description: string) {
+    setActivityLocationId("");
+    setActivityAddress(description);
+    setActivityLatitude(null);
+    setActivityLongitude(null);
+    setAddressSuggestions([]);
+  }
+
   function getActivitiesForDate(
     dateKey: string,
     activityList: ApiActivity[] = activities,
@@ -232,17 +374,18 @@ export default function ItineraryActivities({
     activityList: ApiActivity[] = activities,
     durationMinutes = DEFAULT_ACTIVITY_DURATION_MINUTES,
   ) {
-    let cursor = buildDateTime(dateKey, PLANNER_DAY_START_HOUR);
+    const dayActivities = getActivitiesForDate(dateKey, activityList);
 
-    for (const activity of getActivitiesForDate(dateKey, activityList)) {
-      const activityStart = new Date(activity.startTime);
-      const activityEnd = new Date(activity.endTime);
-      const candidateEnd = addMinutes(cursor, durationMinutes);
-
-      if (candidateEnd <= activityStart) break;
-      if (cursor < activityEnd) cursor = activityEnd;
+    if (dayActivities.length > 0) {
+      const lastActivity = dayActivities[dayActivities.length - 1];
+      const cursor = addMinutes(new Date(lastActivity.endTime), 15);
+      return {
+        startTime: toDateTimeLocalValue(cursor),
+        endTime: toDateTimeLocalValue(addMinutes(cursor, durationMinutes)),
+      };
     }
 
+    const cursor = buildDateTime(dateKey, PLANNER_DAY_START_HOUR);
     return {
       startTime: toDateTimeLocalValue(cursor),
       endTime: toDateTimeLocalValue(addMinutes(cursor, durationMinutes)),
@@ -323,6 +466,9 @@ export default function ItineraryActivities({
       await createActivity({
         title,
         description: description || undefined,
+        address: activityAddress.trim() || undefined,
+        latitude: activityLatitude ?? undefined,
+        longitude: activityLongitude ?? undefined,
         startTime: start.toISOString(),
         endTime: end.toISOString(),
       });
@@ -330,6 +476,7 @@ export default function ItineraryActivities({
       setDescription("");
       setStartTime("");
       setEndTime("");
+      resetActivityLocation();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to create activity",
@@ -424,11 +571,125 @@ export default function ItineraryActivities({
     }
   }
 
-  function handleSelectDate(dateKey: string) {
+  async function handleSyncScheduleWithTravel() {
+    const dayActivities = getActivitiesForDate(selectedDate);
+    if (dayActivities.length < 2) {
+      setError("Add at least two activities on this day to adjust for travel time.");
+      return;
+    }
+
+    const updates = computeTravelAdjustedSchedule(
+      dayActivities,
+      travelTimeSegments,
+    );
+
+    if (updates.length === 0) {
+      setScheduleNotice(
+        "Schedule already leaves room for travel, or driving estimates are unavailable.",
+      );
+      return;
+    }
+
+    const summary = updates
+      .map(
+        (update) =>
+          `${update.title}: +${update.travelMinutes} min travel before start`,
+      )
+      .join("\n");
+
+    const confirmed = window.confirm(
+      `Shift ${updates.length} later activit${updates.length === 1 ? "y" : "ies"} to include driving time between stops?\n\n${summary}`,
+    );
+    if (!confirmed) return;
+
+    setSyncingSchedule(true);
+    setError(null);
+    setScheduleNotice(null);
+
+    try {
+      const updatedActivities = await Promise.all(
+        updates.map((update) =>
+          api.updateActivity(tripId, update.activityId, {
+            startTime: update.startTime,
+            endTime: update.endTime,
+          }),
+        ),
+      );
+
+      const updatedById = new Map(
+        updatedActivities.map((activity) => [activity.id, activity]),
+      );
+      setActivities((prev) =>
+        prev
+          .map((activity) => updatedById.get(activity.id) ?? activity)
+          .sort((a, b) => a.startTime.localeCompare(b.startTime)),
+      );
+      setScheduleNotice(
+        `Updated ${updates.length} activit${updates.length === 1 ? "y" : "ies"} to include travel time between stops.`,
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to adjust schedule",
+      );
+    } finally {
+      setSyncingSchedule(false);
+    }
+  }
+
+  async function handleMoveActivity(
+    activity: ApiActivity,
+    targetDateKey: string,
+  ) {
+    if (activityDateKey(activity) === targetDateKey) return;
+
+    const durationMinutes = activityDurationMinutes(activity);
+    const others = activities.filter((item) => item.id !== activity.id);
+    const slot = findNextAvailableSlot(
+      targetDateKey,
+      others,
+      durationMinutes,
+    );
+    const start = new Date(slot.startTime);
+    const end = addMinutes(start, durationMinutes);
+
+    setMovingActivityId(activity.id);
+    setError(null);
+    try {
+      const updated = await api.updateActivity(tripId, activity.id, {
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+      });
+      setActivities((prev) =>
+        [...prev.filter((item) => item.id !== activity.id), updated].sort(
+          (a, b) => a.startTime.localeCompare(b.startTime),
+        ),
+      );
+      handleAssignDay(targetDateKey);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to move activity",
+      );
+    } finally {
+      setMovingActivityId(null);
+    }
+  }
+
+  function handleAssignDay(dateKey: string) {
     setSelectedDate(dateKey);
     setStartTime("");
     setEndTime("");
     setRecommendationTimes({});
+    setScheduleNotice(null);
+    resetActivityLocation();
+  }
+
+  function handleSuggestDay() {
+    const suggested = findSuggestedDay(plannerDays, activities);
+    if (suggested) handleAssignDay(suggested);
+  }
+
+  function handleSelectDate(dateKey: string) {
+    handleAssignDay(dateKey);
   }
 
   const recommendationCategories = recommendations
@@ -456,8 +717,18 @@ export default function ItineraryActivities({
   );
   const selectedActivities = activitiesByDate[selectedDate] ?? [];
   const nextAvailableActivityTime = findNextAvailableSlot();
+  const suggestedDayKey = findSuggestedDay(plannerDays, activities);
+  const suggestedDay =
+    plannerDays.find((day) => day.dateKey === suggestedDayKey) ?? null;
   const travelTimeByFromActivity = new Map(
     travelTimeSegments.map((segment) => [segment.fromActivityId, segment]),
+  );
+  const hasTimelineContent =
+    selectedActivities.length > 0 ||
+    (showPrayerTimes && prayerTimes != null);
+  const pendingTravelAdjustments = computeTravelAdjustedSchedule(
+    selectedActivities,
+    travelTimeSegments,
   );
   const unplannedActivities = activities.filter(
     (activity) => !plannerDays.some((day) => day.dateKey === activityDateKey(activity)),
@@ -509,27 +780,117 @@ export default function ItineraryActivities({
             );
           })}
         </div>
+
+        <div className='mt-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4'>
+          <div className='flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between'>
+            <div className='flex-1'>
+              <label
+                htmlFor='assign-day'
+                className='mb-2 block text-sm font-medium text-gray-800'
+              >
+                Assign new activities to
+              </label>
+              <select
+                id='assign-day'
+                value={selectedDate}
+                onChange={(e) => handleAssignDay(e.target.value)}
+                className='w-full rounded-lg border border-gray-300 bg-white p-3 text-sm'
+              >
+                {plannerDays.map((day) => {
+                  const count = activitiesByDate[day.dateKey]?.length ?? 0;
+                  return (
+                    <option key={day.dateKey} value={day.dateKey}>
+                      {day.label} · {day.shortDate} ({count} activit
+                      {count === 1 ? "y" : "ies"})
+                    </option>
+                  );
+                })}
+              </select>
+              <p className='mt-2 text-xs text-gray-600'>
+                Pick a day here or use the tabs above. Times auto-fill to the
+                next available slot on the selected day.
+              </p>
+            </div>
+            <Button
+              type='button'
+              variant='outline'
+              className='shrink-0 gap-2 bg-white'
+              onClick={handleSuggestDay}
+            >
+              <Sparkles className='h-4 w-4' />
+              Suggest {suggestedDay?.label ?? "day"}
+            </Button>
+          </div>
+        </div>
       </section>
 
       <section className='grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]'>
         <div className='rounded-xl border border-gray-200 bg-white p-4 shadow-sm'>
-          <div className='mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+          <div className='mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
             <div>
               <h3 className='text-lg font-semibold text-gray-900'>
                 {selectedDay?.label ?? "Selected day"} timeline
               </h3>
               <p className='text-sm text-gray-500'>
                 {selectedDay?.shortDate ?? selectedDate}
+                {prayerTimes ? ` · ${prayerTimes.timezone}` : ""}
+              </p>
+              <p className='mt-1 text-xs text-gray-500'>
+                Activities in the center, drive gaps between them, prayer times in
+                the Salah column on the right.
               </p>
             </div>
-            <span className='rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600'>
-              {selectedActivities.length} planned
-            </span>
+            <div className='flex flex-wrap items-center gap-3'>
+              {selectedActivities.length >= 2 && (
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  className='gap-2'
+                  disabled={
+                    syncingSchedule ||
+                    travelTimesLoading ||
+                    pendingTravelAdjustments.length === 0
+                  }
+                  onClick={handleSyncScheduleWithTravel}
+                >
+                  <Car className='h-4 w-4' />
+                  {syncingSchedule
+                    ? "Adjusting..."
+                    : pendingTravelAdjustments.length > 0
+                      ? `Add travel gaps (${pendingTravelAdjustments.length})`
+                      : "Travel gaps applied"}
+                </Button>
+              )}
+              {hasLocations && (
+                <label className='flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800'>
+                  <input
+                    type='checkbox'
+                    checked={showPrayerTimes}
+                    onChange={(e) => setShowPrayerTimes(e.target.checked)}
+                    className='rounded border-emerald-300'
+                  />
+                  Show prayer times
+                </label>
+              )}
+              <span className='rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600'>
+                {selectedActivities.length} activit
+                {selectedActivities.length === 1 ? "y" : "ies"}
+              </span>
+            </div>
           </div>
 
-          {loading ? (
-            <p className='text-sm text-gray-500'>Loading activities...</p>
-          ) : selectedActivities.length === 0 ? (
+          {scheduleNotice && (
+            <p className='mb-3 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800'>
+              {scheduleNotice}
+            </p>
+          )}
+
+          {loading || prayerTimesLoading ? (
+            <p className='text-sm text-gray-500'>
+              {loading ? "Loading activities..." : "Loading prayer times..."}
+            </p>
+          ) : !hasTimelineContent ? (
             <div className='rounded-lg border border-dashed border-gray-300 bg-gray-50 p-6 text-center'>
               <p className='font-medium text-gray-700'>
                 No activities planned for this day yet.
@@ -537,73 +898,35 @@ export default function ItineraryActivities({
               <p className='mt-1 text-sm text-gray-500'>
                 Add your own activity below or choose one from recommendations.
               </p>
+              {!hasLocations && (
+                <p className='mt-2 text-sm text-amber-700'>
+                  Add a trip location to show prayer times on this timeline.
+                </p>
+              )}
             </div>
           ) : (
-            <ol className='space-y-3'>
-              {selectedActivities.map((activity, index) => {
-                const travelSegment = travelTimeByFromActivity.get(activity.id);
-                const hasNextActivity = index < selectedActivities.length - 1;
+            <PlannerStretchTimeline
+              dateKey={selectedDate}
+              activities={selectedActivities}
+              prayerTimes={prayerTimes}
+              showPrayerTimes={showPrayerTimes}
+              plannerDays={plannerDays}
+              travelTimeByFromActivity={travelTimeByFromActivity}
+              travelTimesLoading={travelTimesLoading}
+              travelTimesError={travelTimesError}
+              movingActivityId={movingActivityId}
+              onMoveActivity={handleMoveActivity}
+              onDeleteActivity={handleDelete}
+            />
+          )}
 
-                return (
-                  <Fragment key={activity.id}>
-                    <li className='relative rounded-lg border border-gray-200 bg-gray-50 p-4 pl-16'>
-                      <div className='absolute left-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white'>
-                        {index + 1}
-                      </div>
-                      <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
-                        <div>
-                          <p className='font-semibold text-gray-900'>
-                            {activity.title}
-                          </p>
-                          {activity.description && (
-                            <p className='mt-1 text-sm text-gray-600'>
-                              {activity.description}
-                            </p>
-                          )}
-                          <p className='mt-2 flex items-center gap-2 text-sm text-gray-500'>
-                            <Clock className='h-4 w-4' />
-                            {timeOnly(activity.startTime)} -{" "}
-                            {timeOnly(activity.endTime)}
-                          </p>
-                          {activity.latitude == null ||
-                          activity.longitude == null ? (
-                            <p className='mt-2 text-xs text-amber-700'>
-                              No coordinates saved for travel-time estimates.
-                            </p>
-                          ) : null}
-                        </div>
-                        <Button
-                          variant='destructive'
-                          size='sm'
-                          onClick={() => handleDelete(activity.id, activity.title)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </li>
-                    {hasNextActivity && (
-                      <li className='ml-16 rounded-lg border border-dashed border-blue-200 bg-blue-50/60 p-3 text-sm text-blue-800'>
-                        {travelTimesLoading ? (
-                          <span>Calculating travel time to next activity...</span>
-                        ) : travelSegment?.estimate ? (
-                          <span>
-                            Travel to {travelSegment.toTitle}:{" "}
-                            <strong>{travelSegment.estimate.durationText}</strong>{" "}
-                            by car ({travelSegment.estimate.distanceText})
-                          </span>
-                        ) : travelSegment?.error ? (
-                          <span>{travelSegment.error}</span>
-                        ) : travelTimesError ? (
-                          <span>{travelTimesError}</span>
-                        ) : (
-                          <span>Travel time unavailable for this segment.</span>
-                        )}
-                      </li>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </ol>
+          {prayerTimesError && showPrayerTimes && (
+            <p className='mt-3 text-sm text-amber-700'>{prayerTimesError}</p>
+          )}
+          {prayerTimes && showPrayerTimes && !prayerTimesLoading && (
+            <p className='mt-3 text-xs text-gray-500'>
+              Prayer times from Aladhan API (method 2) for your trip location.
+            </p>
           )}
         </div>
 
@@ -664,6 +987,61 @@ export default function ItineraryActivities({
             onChange={(e) => setDescription(e.target.value)}
             className='border border-gray-300 rounded-lg p-3 md:col-span-2'
           />
+          {sortedLocations.length > 0 && (
+            <select
+              value={activityLocationId}
+              onChange={(e) => handleSelectSavedLocation(e.target.value)}
+              className='border border-gray-300 rounded-lg p-3 md:col-span-2'
+            >
+              <option value=''>Use a saved trip place (optional)</option>
+              {sortedLocations.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {location.locationTitle}
+                </option>
+              ))}
+            </select>
+          )}
+          <div className='relative md:col-span-2'>
+            <input
+              type='text'
+              placeholder='Activity location or address (optional)'
+              value={activityAddress}
+              onChange={(e) => handleActivityAddressChange(e.target.value)}
+              onBlur={() =>
+                window.setTimeout(() => setAddressSuggestions([]), 150)
+              }
+              className='w-full border border-gray-300 rounded-lg p-3'
+            />
+            {addressSuggestions.length > 0 && (
+              <ul className='absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg'>
+                {addressSuggestions.map((suggestion) => (
+                  <li
+                    key={suggestion.id}
+                    className='cursor-pointer px-4 py-3 text-sm text-gray-800 hover:bg-slate-50'
+                    onMouseDown={() =>
+                      handleSelectAddressSuggestion(suggestion.description)
+                    }
+                  >
+                    {suggestion.description}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {addressSuggestionsLoading && (
+              <p className='mt-2 text-xs text-gray-500'>
+                Loading location suggestions...
+              </p>
+            )}
+            {activityLatitude != null && activityLongitude != null ? (
+              <p className='mt-2 text-xs text-emerald-700'>
+                Location coordinates ready for travel-time estimates.
+              </p>
+            ) : activityAddress.trim() ? (
+              <p className='mt-2 text-xs text-gray-500'>
+                Address will be geocoded when you save this activity.
+              </p>
+            ) : null}
+          </div>
           <input
             type='datetime-local'
             value={startTime || nextAvailableActivityTime.startTime}
@@ -688,14 +1066,37 @@ export default function ItineraryActivities({
       {loading && <p className='text-gray-500'>Loading activities...</p>}
 
       <section className='rounded-lg border border-blue-100 bg-blue-50/40 p-4'>
-        <div className='mb-4'>
-          <h3 className='font-semibold text-gray-800'>
-            Recommended activities
-          </h3>
-          <p className='text-sm text-gray-600'>
-            Suggestions are based on your saved trip locations. Pick a time
-            range and add any suggestion into your itinerary activities.
-          </p>
+        <div className='mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
+          <div>
+            <h3 className='font-semibold text-gray-800'>
+              Recommended activities
+            </h3>
+            <p className='text-sm text-gray-600'>
+              Suggestions are based on your saved trip locations. New picks go
+              to {selectedDay?.label ?? "the selected day"} (
+              {selectedDay?.shortDate ?? selectedDate}).
+            </p>
+          </div>
+          <div className='sm:w-64'>
+            <label
+              htmlFor='recommendation-day'
+              className='mb-1 block text-xs font-medium text-gray-600'
+            >
+              Add recommendations to
+            </label>
+            <select
+              id='recommendation-day'
+              value={selectedDate}
+              onChange={(e) => handleAssignDay(e.target.value)}
+              className='w-full rounded-lg border border-gray-300 bg-white p-2 text-sm'
+            >
+              {plannerDays.map((day) => (
+                <option key={day.dateKey} value={day.dateKey}>
+                  {day.label} · {day.shortDate}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {!hasLocations ? (

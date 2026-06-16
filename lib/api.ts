@@ -128,6 +128,23 @@ export const api = {
         method: "DELETE",
       },
     ),
+  updateActivity: (
+    tripId: string,
+    activityId: string,
+    body: {
+      title?: string;
+      description?: string;
+      startTime?: string;
+      endTime?: string;
+      address?: string;
+      latitude?: number;
+      longitude?: number;
+    },
+  ) =>
+    fetchApi<ApiActivity>(`/api/trips/${tripId}/activities/${activityId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   getActivityTravelTimes: (tripId: string, date: string) =>
     fetchApi<ActivityTravelTimesResponse>(
       `/api/trips/${tripId}/activities/travel-times?date=${encodeURIComponent(date)}`,

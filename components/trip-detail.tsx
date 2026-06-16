@@ -6,7 +6,8 @@ import Link from "next/link";
 import { Calendar, Clock, MapPin, Plus } from "lucide-react";
 import { Button } from "./ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import Map from "./map";
 import SortableItinerary from "./sortable-itinerary";
 import PrayerTimesPanel from "./prayer-times-panel";
@@ -87,7 +88,23 @@ function timeOnly(value: string) {
 }
 
 export default function TripDetailClient({ trip }: TripDetailClientProps) {
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState("overview");
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    const validTabs = [
+      "overview",
+      "itinerary",
+      "activities",
+      "prayer",
+      "nearby",
+      "map",
+    ];
+    if (tab && validTabs.includes(tab)) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
   const hasLocations = trip.locations.length > 0;
   const defaultDate = trip.startDate.toISOString().slice(0, 10);
   const overviewDays = buildOverviewDays(trip.startDate, trip.endDate);
