@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type {
   ActivityRecommendationsResponse,
@@ -8,6 +8,7 @@ import type {
   ApiActivity,
   ApiLocation,
   NearbyPlace,
+  PlaceSuggestion,
 } from "@/types/api";
 import { formatDateTime } from "@/lib/utils";
 import { Button } from "./ui/button";
@@ -131,6 +132,17 @@ export default function ItineraryActivities({
     useState("All");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [activityLocationId, setActivityLocationId] = useState("");
+  const [activityAddress, setActivityAddress] = useState("");
+  const [activityLatitude, setActivityLatitude] = useState<number | null>(null);
+  const [activityLongitude, setActivityLongitude] = useState<number | null>(
+    null,
+  );
+  const [addressSuggestions, setAddressSuggestions] = useState<
+    PlaceSuggestion[]
+  >([]);
+  const [addressSuggestionsLoading, setAddressSuggestionsLoading] =
+    useState(false);
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [recommendationTimes, setRecommendationTimes] = useState<
@@ -139,6 +151,7 @@ export default function ItineraryActivities({
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const addressDebounceRef = useRef<number | null>(null);
 
   const loadActivities = () => {
     setLoading(true);
@@ -162,7 +175,38 @@ export default function ItineraryActivities({
     setStartTime("");
     setEndTime("");
     setRecommendationTimes({});
+    resetActivityLocation();
   }, [firstPlannerDate, tripId]);
+
+  useEffect(() => {
+    const trimmedAddress = activityAddress.trim();
+    if (activityLocationId || trimmedAddress.length < 2) {
+      setAddressSuggestions([]);
+      return;
+    }
+
+    setAddressSuggestionsLoading(true);
+    if (addressDebounceRef.current) {
+      window.clearTimeout(addressDebounceRef.current);
+    }
+
+    addressDebounceRef.current = window.setTimeout(async () => {
+      try {
+        const results = await api.searchPlaces(trimmedAddress);
+        setAddressSuggestions(results);
+      } catch {
+        setAddressSuggestions([]);
+      } finally {
+        setAddressSuggestionsLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      if (addressDebounceRef.current) {
+        window.clearTimeout(addressDebounceRef.current);
+      }
+    };
+  }, [activityAddress, activityLocationId]);
 
   useEffect(() => {
     if (!hasLocations) return;
@@ -202,6 +246,46 @@ export default function ItineraryActivities({
       })
       .finally(() => setTravelTimesLoading(false));
   }, [tripId, selectedDate, activities]);
+  function resetActivityLocation() {
+    setActivityLocationId("");
+    setActivityAddress("");
+    setActivityLatitude(null);
+    setActivityLongitude(null);
+    setAddressSuggestions([]);
+  }
+
+  function handleSelectSavedLocation(locationId: string) {
+    setActivityLocationId(locationId);
+    if (!locationId) {
+      setActivityAddress("");
+      setActivityLatitude(null);
+      setActivityLongitude(null);
+      return;
+    }
+
+    const location = locations.find((item) => item.id === locationId);
+    if (!location) return;
+
+    setActivityAddress(location.locationTitle);
+    setActivityLatitude(location.latitude);
+    setActivityLongitude(location.longitude);
+    setAddressSuggestions([]);
+  }
+
+  function handleActivityAddressChange(value: string) {
+    setActivityLocationId("");
+    setActivityAddress(value);
+    setActivityLatitude(null);
+    setActivityLongitude(null);
+  }
+
+  function handleSelectAddressSuggestion(description: string) {
+    setActivityLocationId("");
+    setActivityAddress(description);
+    setActivityLatitude(null);
+    setActivityLongitude(null);
+    setAddressSuggestions([]);
+  }
 
   function getActivitiesForDate(
     dateKey: string,
@@ -323,6 +407,9 @@ export default function ItineraryActivities({
       await createActivity({
         title,
         description: description || undefined,
+        address: activityAddress.trim() || undefined,
+        latitude: activityLatitude ?? undefined,
+        longitude: activityLongitude ?? undefined,
         startTime: start.toISOString(),
         endTime: end.toISOString(),
       });
@@ -330,6 +417,7 @@ export default function ItineraryActivities({
       setDescription("");
       setStartTime("");
       setEndTime("");
+      resetActivityLocation();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to create activity",
@@ -429,6 +517,7 @@ export default function ItineraryActivities({
     setStartTime("");
     setEndTime("");
     setRecommendationTimes({});
+    resetActivityLocation();
   }
 
   const recommendationCategories = recommendations
@@ -565,12 +654,32 @@ export default function ItineraryActivities({
                             {timeOnly(activity.startTime)} -{" "}
                             {timeOnly(activity.endTime)}
                           </p>
-                          {activity.latitude == null ||
-                          activity.longitude == null ? (
-                            <p className='mt-2 text-xs text-amber-700'>
-                              No coordinates saved for travel-time estimates.
+                          {activity.address ? (
+                            <p className='mt-2 flex items-start gap-2 text-sm text-gray-600'>
+                              <MapPin className='mt-0.5 h-4 w-4 shrink-0' />
+                              <span>{activity.address}</span>
                             </p>
                           ) : null}
+                          {activity.latitude != null &&
+                          activity.longitude != null ? (
+                            <a
+                              href={`https://www.google.com/maps/search/?api=1&query=${activity.latitude},${activity.longitude}`}
+                              target='_blank'
+                              rel='noreferrer'
+                              className='mt-2 inline-block text-xs text-blue-600 hover:underline'
+                            >
+                              View on Maps
+                            </a>
+                          ) : activity.address ? (
+                            <p className='mt-2 text-xs text-amber-700'>
+                              Coordinates not saved yet for travel-time
+                              estimates.
+                            </p>
+                          ) : (
+                            <p className='mt-2 text-xs text-amber-700'>
+                              No location saved for travel-time estimates.
+                            </p>
+                          )}
                         </div>
                         <Button
                           variant='destructive'
@@ -664,6 +773,61 @@ export default function ItineraryActivities({
             onChange={(e) => setDescription(e.target.value)}
             className='border border-gray-300 rounded-lg p-3 md:col-span-2'
           />
+          {sortedLocations.length > 0 && (
+            <select
+              value={activityLocationId}
+              onChange={(e) => handleSelectSavedLocation(e.target.value)}
+              className='border border-gray-300 rounded-lg p-3 md:col-span-2'
+            >
+              <option value=''>Use a saved trip place (optional)</option>
+              {sortedLocations.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {location.locationTitle}
+                </option>
+              ))}
+            </select>
+          )}
+          <div className='relative md:col-span-2'>
+            <input
+              type='text'
+              placeholder='Activity location or address (optional)'
+              value={activityAddress}
+              onChange={(e) => handleActivityAddressChange(e.target.value)}
+              onBlur={() =>
+                window.setTimeout(() => setAddressSuggestions([]), 150)
+              }
+              className='w-full border border-gray-300 rounded-lg p-3'
+            />
+            {addressSuggestions.length > 0 && (
+              <ul className='absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg'>
+                {addressSuggestions.map((suggestion) => (
+                  <li
+                    key={suggestion.id}
+                    className='cursor-pointer px-4 py-3 text-sm text-gray-800 hover:bg-slate-50'
+                    onMouseDown={() =>
+                      handleSelectAddressSuggestion(suggestion.description)
+                    }
+                  >
+                    {suggestion.description}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {addressSuggestionsLoading && (
+              <p className='mt-2 text-xs text-gray-500'>
+                Loading location suggestions...
+              </p>
+            )}
+            {activityLatitude != null && activityLongitude != null ? (
+              <p className='mt-2 text-xs text-emerald-700'>
+                Location coordinates ready for travel-time estimates.
+              </p>
+            ) : activityAddress.trim() ? (
+              <p className='mt-2 text-xs text-gray-500'>
+                Address will be geocoded when you save this activity.
+              </p>
+            ) : null}
+          </div>
           <input
             type='datetime-local'
             value={startTime || nextAvailableActivityTime.startTime}
