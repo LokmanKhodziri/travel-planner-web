@@ -6,11 +6,26 @@ import type {
   PrayerTimings,
 } from "@/types/api";
 import { Button } from "./ui/button";
-import { Bus, Car, Clock, Footprints, MapPin } from "lucide-react";
+import { Bus, Car, Clock, Footprints, GripVertical, MapPin, Pencil } from "lucide-react";
 import type { TravelMode } from "@/types/api";
 import { formatTravelEstimateLabel } from "@/lib/travel-modes";
 import { activityPrimaryDateKey, clipActivityToDay } from "@/lib/planner-dates";
 import ActivityNearbyMosques from "./activity-nearby-mosques";
+import {
+  DndContext,
+  closestCenter,
+  type DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 const PRAYER_ORDER = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"] as const;
 const GAP_COMPRESS_THRESHOLD_MIN = 60;
@@ -71,8 +86,11 @@ interface PlannerStretchTimelineProps {
   travelTimesLoading: boolean;
   travelTimesError: string | null;
   movingActivityId: string | null;
+  reorderingActivities: boolean;
   onMoveActivity: (activity: ApiActivity, dateKey: string) => void;
   onDeleteActivity: (activityId: string, activityTitle: string) => void;
+  onEditActivity: (activity: ApiActivity) => void;
+  onReorderActivities: (orderedActivityIds: string[]) => void;
 }
 
 function parsePrayerDateTime(dateKey: string, time: string) {
@@ -355,6 +373,210 @@ function renderTravelContent(
   return <span className='text-xs font-medium'>Travel time unavailable</span>;
 }
 
+interface SortableTimelineActivityRowProps {
+  item: ActivityItem;
+  itemIndex: number;
+  items: TimelineItem[];
+  gridColumns: string;
+  showPrayerTimes: boolean;
+  prayers: PrayerMarker[];
+  plannerDays: PlannerDay[];
+  tripId: string;
+  travelTimesLoading: boolean;
+  travelTimesError: string | null;
+  movingActivityId: string | null;
+  reorderingActivities: boolean;
+  onMoveActivity: (activity: ApiActivity, dateKey: string) => void;
+  onDeleteActivity: (activityId: string, activityTitle: string) => void;
+  onEditActivity: (activity: ApiActivity) => void;
+}
+
+function SortableTimelineActivityRow({
+  item,
+  itemIndex,
+  items,
+  gridColumns,
+  showPrayerTimes,
+  prayers,
+  plannerDays,
+  tripId,
+  travelTimesLoading,
+  travelTimesError,
+  movingActivityId,
+  reorderingActivities,
+  onMoveActivity,
+  onDeleteActivity,
+  onEditActivity,
+}: SortableTimelineActivityRowProps) {
+  const { block, travelSegment, showTravel } = item;
+  const previousActivity = findPreviousActivityBlock(items, itemIndex);
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: block.activity.id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className='grid items-start gap-x-3 px-3 py-3'
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.65 : 1,
+        gridTemplateColumns: gridColumns,
+      }}
+    >
+      <div className='pt-3 text-right'>
+        <span className='text-[11px] font-semibold text-gray-600'>
+          {timeOnly(block.startAt)}
+        </span>
+        <p className='mt-0.5 text-[10px] text-gray-400'>
+          {timeOnly(block.endAt)}
+        </p>
+      </div>
+
+      <article className='overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm'>
+        <div className='border-l-4 border-l-blue-500'>
+          {showTravel && (
+            <div className='flex items-center gap-1.5 border-b border-blue-100 bg-blue-50 px-3 py-1.5 text-blue-800'>
+              {renderTravelContent(
+                travelSegment,
+                travelTimesLoading,
+                travelTimesError,
+                previousActivity?.activity.title,
+              )}
+            </div>
+          )}
+          <div className='flex items-start justify-between gap-3 px-3 py-2.5'>
+            <div className='flex min-w-0 flex-1 items-start gap-2'>
+              <button
+                type='button'
+                ref={setActivatorNodeRef}
+                {...attributes}
+                {...listeners}
+                disabled={reorderingActivities || movingActivityId != null}
+                className='mt-0.5 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40'
+                title='Drag to reorder'
+                aria-label={`Drag ${block.activity.title}`}
+              >
+                <GripVertical className='h-4 w-4' />
+              </button>
+              <div className='min-w-0 flex-1'>
+                <div className='flex items-center gap-2'>
+                  <span className='flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white'>
+                    {block.activityIndex}
+                  </span>
+                  <h4 className='text-sm font-semibold leading-snug text-gray-900'>
+                    {block.activity.title}
+                  </h4>
+                </div>
+                <p className='mt-1 flex items-center gap-1 text-xs text-gray-500'>
+                  <Clock className='h-3.5 w-3.5 shrink-0' />
+                  {timeOnly(block.fullStartAt)} – {timeOnly(block.fullEndAt)}
+                </p>
+                {(block.continuesFromPreviousDay ||
+                  block.continuesToNextDay) && (
+                  <p className='mt-1 text-[11px] font-medium text-amber-700'>
+                    {block.continuesFromPreviousDay && block.continuesToNextDay
+                      ? "Spans overnight"
+                      : block.continuesFromPreviousDay
+                        ? "Continued from previous day"
+                        : "Continues into next day"}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className='flex shrink-0 flex-col gap-1.5'>
+              <select
+                value={activityPrimaryDateKey(block.activity)}
+                onChange={(e) =>
+                  onMoveActivity(block.activity, e.target.value)
+                }
+                disabled={
+                  movingActivityId === block.activity.id || reorderingActivities
+                }
+                className='rounded-md border border-gray-300 bg-white px-2 py-1 text-[11px]'
+              >
+                {plannerDays.map((day) => (
+                  <option key={day.dateKey} value={day.dateKey}>
+                    {day.label}
+                  </option>
+                ))}
+              </select>
+              <Button
+                type='button'
+                variant='outline'
+                size='sm'
+                className='h-7 px-2 text-[11px]'
+                disabled={reorderingActivities}
+                onClick={() => onEditActivity(block.activity)}
+              >
+                <Pencil className='h-3 w-3' />
+                Edit
+              </Button>
+              <Button
+                variant='destructive'
+                size='sm'
+                className='h-7 px-2 text-[11px]'
+                disabled={reorderingActivities}
+                onClick={() =>
+                  onDeleteActivity(block.activity.id, block.activity.title)
+                }
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+
+          {(block.activity.address ||
+            (block.activity.latitude != null &&
+              block.activity.longitude != null)) && (
+            <div className='space-y-1 border-t border-gray-100 px-3 py-2 text-xs text-gray-600'>
+              {block.activity.address ? (
+                <p className='flex items-start gap-1.5'>
+                  <MapPin className='mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400' />
+                  <span>{block.activity.address}</span>
+                </p>
+              ) : null}
+              {block.activity.latitude != null &&
+              block.activity.longitude != null ? (
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${block.activity.latitude},${block.activity.longitude}`}
+                  target='_blank'
+                  rel='noreferrer'
+                  className='inline-block text-blue-600 hover:underline'
+                >
+                  View on Maps
+                </a>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </article>
+
+      {showPrayerTimes && (
+        <div className='border-l border-emerald-100/80 pl-2 pt-1'>
+          <PrayerCell prayers={prayers} />
+          {block.activity.latitude != null &&
+            block.activity.longitude != null && (
+              <ActivityNearbyMosques
+                tripId={tripId}
+                activityTitle={block.activity.title}
+                latitude={block.activity.latitude}
+                longitude={block.activity.longitude}
+              />
+            )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PlannerStretchTimeline({
   tripId,
   dateKey,
@@ -366,9 +588,17 @@ export default function PlannerStretchTimeline({
   travelTimesLoading,
   travelTimesError,
   movingActivityId,
+  reorderingActivities,
   onMoveActivity,
   onDeleteActivity,
+  onEditActivity,
+  onReorderActivities,
 }: PlannerStretchTimelineProps) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+  );
   const view = buildStretchTimelineView(
     dateKey,
     activities,
@@ -386,6 +616,20 @@ export default function PlannerStretchTimeline({
     showPrayerTimes && view.prayers.length > 0
       ? assignPrayersToItems(view.items, view.prayers)
       : new Map<number, PrayerMarker[]>();
+  const sortableActivityIds = view.items
+    .filter((item): item is ActivityItem => item.type === "activity")
+    .map((item) => item.block.activity.id);
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id || reorderingActivities) return;
+
+    const oldIndex = sortableActivityIds.indexOf(String(active.id));
+    const newIndex = sortableActivityIds.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    onReorderActivities(arrayMove(sortableActivityIds, oldIndex, newIndex));
+  }
 
   return (
     <div className='max-h-[min(72vh,720px)] overflow-y-auto overflow-x-auto rounded-xl border border-gray-200 bg-white'>
@@ -403,165 +647,72 @@ export default function PlannerStretchTimeline({
           )}
         </div>
 
-        <div className='divide-y divide-gray-100'>
-          {view.items.map((item, index) => {
-            if (item.type === "free") {
-              return (
-                <div
-                  key={`free-${item.startMinute}-${item.endMinute}`}
-                  className='grid items-center bg-gray-50/50 px-3 py-2.5'
-                  style={{ gridTemplateColumns: gridColumns }}
-                >
-                  <span className='text-right text-[11px] text-gray-400'>
-                    {formatHourLabel(item.startMinute)}
-                  </span>
-                  <div className='flex items-center gap-2 px-1'>
-                    <div className='flex-1 border-t border-dashed border-gray-300' />
-                    <span className='shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-[10px] font-medium text-gray-500'>
-                      {formatDuration(item.endMinute - item.startMinute)} free
-                    </span>
-                    <div className='flex-1 border-t border-dashed border-gray-300' />
-                  </div>
-                  {showPrayerTimes && (
-                    <div className='border-l border-emerald-100/80 pl-2'>
-                      <PrayerCell prayers={prayersByRow.get(index) ?? []} />
-                    </div>
-                  )}
-                </div>
-              );
-            }
+        <p className='border-b border-gray-100 bg-gray-50/60 px-3 py-2 text-[11px] text-gray-500'>
+          Drag the handle to reorder activities. Times, travel gaps, and
+          prayer markers refresh automatically.
+        </p>
 
-            const { block, travelSegment, showTravel } = item;
-            const previousActivity = findPreviousActivityBlock(view.items, index);
-
-            return (
-              <div
-                key={block.activity.id}
-                className='grid items-start gap-x-3 px-3 py-3'
-                style={{ gridTemplateColumns: gridColumns }}
-              >
-                <div className='pt-3 text-right'>
-                  <span className='text-[11px] font-semibold text-gray-600'>
-                    {timeOnly(block.startAt)}
-                  </span>
-                  <p className='mt-0.5 text-[10px] text-gray-400'>
-                    {timeOnly(block.endAt)}
-                  </p>
-                </div>
-
-                <article className='overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm'>
-                  <div className='border-l-4 border-l-blue-500'>
-                    {showTravel && (
-                      <div className='flex items-center gap-1.5 border-b border-blue-100 bg-blue-50 px-3 py-1.5 text-blue-800'>
-                        {renderTravelContent(
-                          travelSegment,
-                          travelTimesLoading,
-                          travelTimesError,
-                          previousActivity?.activity.title,
-                        )}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={sortableActivityIds}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className='divide-y divide-gray-100'>
+              {view.items.map((item, index) => {
+                if (item.type === "free") {
+                  return (
+                    <div
+                      key={`free-${item.startMinute}-${item.endMinute}`}
+                      className='grid items-center bg-gray-50/50 px-3 py-2.5'
+                      style={{ gridTemplateColumns: gridColumns }}
+                    >
+                      <span className='text-right text-[11px] text-gray-400'>
+                        {formatHourLabel(item.startMinute)}
+                      </span>
+                      <div className='flex items-center gap-2 px-1'>
+                        <div className='flex-1 border-t border-dashed border-gray-300' />
+                        <span className='shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-[10px] font-medium text-gray-500'>
+                          {formatDuration(item.endMinute - item.startMinute)} free
+                        </span>
+                        <div className='flex-1 border-t border-dashed border-gray-300' />
                       </div>
-                    )}
-                    <div className='flex items-start justify-between gap-3 px-3 py-2.5'>
-                      <div className='min-w-0 flex-1'>
-                        <div className='flex items-center gap-2'>
-                          <span className='flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white'>
-                            {block.activityIndex}
-                          </span>
-                          <h4 className='text-sm font-semibold leading-snug text-gray-900'>
-                            {block.activity.title}
-                          </h4>
+                      {showPrayerTimes && (
+                        <div className='border-l border-emerald-100/80 pl-2'>
+                          <PrayerCell prayers={prayersByRow.get(index) ?? []} />
                         </div>
-                        <p className='mt-1 flex items-center gap-1 text-xs text-gray-500'>
-                          <Clock className='h-3.5 w-3.5 shrink-0' />
-                          {timeOnly(block.fullStartAt)} – {timeOnly(block.fullEndAt)}
-                        </p>
-                        {(block.continuesFromPreviousDay ||
-                          block.continuesToNextDay) && (
-                          <p className='mt-1 text-[11px] font-medium text-amber-700'>
-                            {block.continuesFromPreviousDay &&
-                            block.continuesToNextDay
-                              ? "Spans overnight"
-                              : block.continuesFromPreviousDay
-                                ? "Continued from previous day"
-                                : "Continues into next day"}
-                          </p>
-                        )}
-                      </div>
-                      <div className='flex shrink-0 flex-col gap-1.5'>
-                        <select
-                          value={activityPrimaryDateKey(block.activity)}
-                          onChange={(e) =>
-                            onMoveActivity(block.activity, e.target.value)
-                          }
-                          disabled={movingActivityId === block.activity.id}
-                          className='rounded-md border border-gray-300 bg-white px-2 py-1 text-[11px]'
-                        >
-                          {plannerDays.map((day) => (
-                            <option key={day.dateKey} value={day.dateKey}>
-                              {day.label}
-                            </option>
-                          ))}
-                        </select>
-                        <Button
-                          variant='destructive'
-                          size='sm'
-                          className='h-7 px-2 text-[11px]'
-                          onClick={() =>
-                            onDeleteActivity(
-                              block.activity.id,
-                              block.activity.title,
-                            )
-                          }
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
-
-                    {(block.activity.address ||
-                      (block.activity.latitude != null &&
-                        block.activity.longitude != null)) && (
-                      <div className='space-y-1 border-t border-gray-100 px-3 py-2 text-xs text-gray-600'>
-                        {block.activity.address ? (
-                          <p className='flex items-start gap-1.5'>
-                            <MapPin className='mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400' />
-                            <span>{block.activity.address}</span>
-                          </p>
-                        ) : null}
-                        {block.activity.latitude != null &&
-                        block.activity.longitude != null ? (
-                          <a
-                            href={`https://www.google.com/maps/search/?api=1&query=${block.activity.latitude},${block.activity.longitude}`}
-                            target='_blank'
-                            rel='noreferrer'
-                            className='inline-block text-blue-600 hover:underline'
-                          >
-                            View on Maps
-                          </a>
-                        ) : null}
-                      </div>
-                    )}
-                  </div>
-                </article>
-
-                {showPrayerTimes && (
-                  <div className='border-l border-emerald-100/80 pl-2 pt-1'>
-                    <PrayerCell prayers={prayersByRow.get(index) ?? []} />
-                    {block.activity.latitude != null &&
-                      block.activity.longitude != null && (
-                        <ActivityNearbyMosques
-                          tripId={tripId}
-                          activityTitle={block.activity.title}
-                          latitude={block.activity.latitude}
-                          longitude={block.activity.longitude}
-                        />
                       )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <SortableTimelineActivityRow
+                    key={item.block.activity.id}
+                    item={item}
+                    itemIndex={index}
+                    items={view.items}
+                    gridColumns={gridColumns}
+                    showPrayerTimes={showPrayerTimes}
+                    prayers={prayersByRow.get(index) ?? []}
+                    plannerDays={plannerDays}
+                    tripId={tripId}
+                    travelTimesLoading={travelTimesLoading}
+                    travelTimesError={travelTimesError}
+                    movingActivityId={movingActivityId}
+                    reorderingActivities={reorderingActivities}
+                    onMoveActivity={onMoveActivity}
+                    onDeleteActivity={onDeleteActivity}
+                    onEditActivity={onEditActivity}
+                  />
+                );
+              })}
+            </div>
+          </SortableContext>
+        </DndContext>
       </div>
 
       <div className='flex flex-wrap gap-4 border-t border-gray-100 bg-gray-50 px-4 py-2 text-[11px] text-gray-500'>

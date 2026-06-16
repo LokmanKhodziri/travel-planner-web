@@ -13,7 +13,7 @@ import type {
   TravelMode,
 } from "@/types/api";
 import { formatDateTime } from "@/lib/utils";
-import { computeTravelAdjustedSchedule } from "@/lib/planner-schedule";
+import { computeTravelAdjustedSchedule, computeScheduleForOrderedActivities } from "@/lib/planner-schedule";
 import {
   activityPrimaryDateKey,
   getActivitiesOverlappingDate,
@@ -33,6 +33,7 @@ import {
 } from "@/lib/travel-modes";
 import { Button } from "./ui/button";
 import PlannerStretchTimeline from "./planner-stretch-timeline";
+import ActivityEditDialog from "./activity-edit-dialog";
 import { CalendarDays, MapPin, RefreshCw, Route, Sparkles } from "lucide-react";
 
 interface ItineraryActivitiesProps {
@@ -236,6 +237,9 @@ export default function ItineraryActivities({
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [movingActivityId, setMovingActivityId] = useState<string | null>(null);
+  const [reorderingActivities, setReorderingActivities] = useState(false);
+  const [editingActivity, setEditingActivity] = useState<ApiActivity | null>(null);
+  const [editingActivitySaving, setEditingActivitySaving] = useState(false);
   const [syncingSchedule, setSyncingSchedule] = useState(false);
   const [scheduleNotice, setScheduleNotice] = useState<string | null>(null);
   const [prayerTimes, setPrayerTimes] = useState<PrayerTimings | null>(null);
@@ -730,6 +734,116 @@ export default function ItineraryActivities({
     }
   }
 
+  async function handleReorderActivities(orderedActivityIds: string[]) {
+    if (orderedActivityIds.length < 2) return;
+
+    const dayActivities = getActivitiesForDate(selectedDate);
+    const ordered = orderedActivityIds
+      .map((id) => dayActivities.find((activity) => activity.id === id))
+      .filter((activity): activity is ApiActivity => Boolean(activity));
+
+    if (ordered.length < 2) return;
+
+    setReorderingActivities(true);
+    setError(null);
+    setScheduleNotice(null);
+
+    try {
+      const travelResponse = await api.getActivityTravelTimes(
+        tripId,
+        selectedDate,
+        travelMode,
+        orderedActivityIds,
+      );
+      const updates = computeScheduleForOrderedActivities(
+        ordered,
+        travelResponse.segments,
+        selectedDate,
+      );
+
+      if (updates.length === 0) {
+        setScheduleNotice("Activities reordered. Times already fit the new route.");
+        setTravelTimeSegments(travelResponse.segments);
+        return;
+      }
+
+      const updatedActivities = await Promise.all(
+        updates.map((update) =>
+          api.updateActivity(tripId, update.activityId, {
+            startTime: update.startTime,
+            endTime: update.endTime,
+          }),
+        ),
+      );
+
+      const updatedById = new Map(
+        updatedActivities.map((activity) => [activity.id, activity]),
+      );
+      setActivities((prev) =>
+        prev
+          .map((activity) => updatedById.get(activity.id) ?? activity)
+          .sort((a, b) => a.startTime.localeCompare(b.startTime)),
+      );
+      setTravelTimeSegments(travelResponse.segments);
+      setScheduleNotice(
+        `Reordered ${ordered.length} activities and updated times with ${travelModeLabel(travelMode).toLowerCase()} gaps.`,
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to reorder activities",
+      );
+    } finally {
+      setReorderingActivities(false);
+    }
+  }
+
+  async function handleEditActivitySave(values: {
+    title: string;
+    description: string;
+    startTime: string;
+    endTime: string;
+    address: string;
+  }) {
+    if (!editingActivity) return;
+
+    const start = new Date(values.startTime);
+    const end = new Date(values.endTime);
+    if (
+      Number.isNaN(start.getTime()) ||
+      Number.isNaN(end.getTime()) ||
+      end <= start
+    ) {
+      setError("Choose a valid start and end time.");
+      return;
+    }
+
+    setEditingActivitySaving(true);
+    setError(null);
+
+    try {
+      const updated = await api.updateActivity(tripId, editingActivity.id, {
+        title: values.title,
+        description: values.description || undefined,
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+        address: values.address || undefined,
+      });
+      setActivities((prev) =>
+        prev
+          .map((activity) => (activity.id === updated.id ? updated : activity))
+          .sort((a, b) => a.startTime.localeCompare(b.startTime)),
+      );
+      setEditingActivity(null);
+      setScheduleNotice(`Updated "${updated.title}".`);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to update activity",
+      );
+    } finally {
+      setEditingActivitySaving(false);
+    }
+  }
+
   async function handleDelete(activityId: string, activityTitle: string) {
     const confirmed = window.confirm(
       `Delete "${activityTitle}" from your itinerary? This action cannot be undone.`,
@@ -1128,11 +1242,14 @@ export default function ItineraryActivities({
               showPrayerTimes={showPrayerTimes}
               plannerDays={plannerDays}
               travelTimeByFromActivity={travelTimeByFromActivity}
-              travelTimesLoading={travelTimesLoading}
+              travelTimesLoading={travelTimesLoading || reorderingActivities}
               travelTimesError={travelTimesError}
               movingActivityId={movingActivityId}
+              reorderingActivities={reorderingActivities}
               onMoveActivity={handleMoveActivity}
               onDeleteActivity={handleDelete}
+              onEditActivity={setEditingActivity}
+              onReorderActivities={handleReorderActivities}
             />
           )}
 
@@ -1280,6 +1397,14 @@ export default function ItineraryActivities({
 
       {error && <p className='text-red-600'>{error}</p>}
       {loading && <p className='text-gray-500'>Loading activities...</p>}
+
+      <ActivityEditDialog
+        activity={editingActivity}
+        open={editingActivity != null}
+        saving={editingActivitySaving}
+        onClose={() => setEditingActivity(null)}
+        onSave={handleEditActivitySave}
+      />
 
       <section className='rounded-lg border border-blue-100 bg-blue-50/40 p-4'>
         <div className='mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>

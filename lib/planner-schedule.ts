@@ -1,4 +1,5 @@
 import type { ActivityTravelTimeSegment, ApiActivity } from "@/types/api";
+import { clipActivityToDay } from "@/lib/planner-dates";
 
 export interface ActivityTimeUpdate {
   activityId: string;
@@ -45,6 +46,62 @@ export function computeTravelAdjustedSchedule(
       new Date(current.endTime).getTime() -
       new Date(current.startTime).getTime();
     const newStart = new Date(previousEnd.getTime() + travelMinutes * 60 * 1000);
+    const newEnd = new Date(newStart.getTime() + durationMs);
+
+    const startChanged =
+      Math.abs(newStart.getTime() - new Date(current.startTime).getTime()) >=
+      60_000;
+    const endChanged =
+      Math.abs(newEnd.getTime() - new Date(current.endTime).getTime()) >= 60_000;
+
+    if (startChanged || endChanged) {
+      updates.push({
+        activityId: current.id,
+        title: current.title,
+        startTime: newStart.toISOString(),
+        endTime: newEnd.toISOString(),
+        travelMinutes,
+      });
+    }
+
+    previousEnd = newEnd;
+  }
+
+  return updates;
+}
+
+export function computeScheduleForOrderedActivities(
+  orderedActivities: ApiActivity[],
+  travelSegments: ActivityTravelTimeSegment[],
+  dateKey: string,
+): ActivityTimeUpdate[] {
+  if (orderedActivities.length === 0) return [];
+
+  const anchorStart: Date = orderedActivities.reduce((earliest, activity) => {
+    const start = clipActivityToDay(activity, dateKey).startAt;
+    return start < earliest ? start : earliest;
+  }, clipActivityToDay(orderedActivities[0], dateKey).startAt);
+
+  const updates: ActivityTimeUpdate[] = [];
+  let previousEnd: Date | null = null;
+
+  for (let index = 0; index < orderedActivities.length; index += 1) {
+    const current = orderedActivities[index];
+    const durationMs =
+      new Date(current.endTime).getTime() -
+      new Date(current.startTime).getTime();
+    const travelMinutes =
+      index === 0
+        ? 0
+        : getTravelMinutesBetween(
+            orderedActivities[index - 1].id,
+            current.id,
+            travelSegments,
+          ) ?? 15;
+    const newStart: Date =
+      index === 0
+        ? anchorStart
+        : new Date(previousEnd!.getTime() + travelMinutes * 60 * 1000);
     const newEnd = new Date(newStart.getTime() + durationMs);
 
     const startChanged =

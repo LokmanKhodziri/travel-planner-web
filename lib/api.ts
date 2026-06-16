@@ -187,10 +187,19 @@ export const api = {
     tripId: string,
     date: string,
     mode: TravelMode = "driving",
-  ) =>
-    fetchApi<ActivityTravelTimesResponse>(
-      `/api/trips/${tripId}/activities/travel-times?date=${encodeURIComponent(date)}&mode=${encodeURIComponent(mode)}`,
-    ),
+    order?: string[],
+  ) => {
+    const params = new URLSearchParams({
+      date,
+      mode,
+    });
+    if (order?.length) {
+      params.set("order", order.join(","));
+    }
+    return fetchApi<ActivityTravelTimesResponse>(
+      `/api/trips/${tripId}/activities/travel-times?${params.toString()}`,
+    );
+  },
   getExpenses: (tripId: string) =>
     fetchApi<ApiExpense[]>(`/api/trips/${tripId}/expenses`),
   createExpense: (
