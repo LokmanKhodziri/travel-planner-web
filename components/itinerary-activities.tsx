@@ -15,6 +15,11 @@ import type {
 import { formatDateTime } from "@/lib/utils";
 import { computeTravelAdjustedSchedule } from "@/lib/planner-schedule";
 import {
+  activityPrimaryDateKey,
+  getActivitiesOverlappingDate,
+  plannerDateKey,
+} from "@/lib/planner-dates";
+import {
   getStoredTravelMode,
   storeTravelMode,
   TRAVEL_MODE_OPTIONS,
@@ -47,7 +52,11 @@ const DEFAULT_ACTIVITY_DURATION_MINUTES = 120;
 const PLANNER_DAY_START_HOUR = 9;
 
 function toDateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return plannerDateKey(date);
+}
+
+function activityDateKey(activity: ApiActivity) {
+  return activityPrimaryDateKey(activity);
 }
 
 function buildPlannerDays(startDate: string, endDate: string): PlannerDay[] {
@@ -79,10 +88,6 @@ function buildPlannerDays(startDate: string, endDate: string): PlannerDay[] {
   }
 
   return days;
-}
-
-function activityDateKey(activity: ApiActivity) {
-  return toDateKey(new Date(activity.startTime));
 }
 
 function timeOnly(value: string) {
@@ -368,9 +373,7 @@ export default function ItineraryActivities({
     dateKey: string,
     activityList: ApiActivity[] = activities,
   ) {
-    return activityList
-      .filter((activity) => activityDateKey(activity) === dateKey)
-      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    return getActivitiesOverlappingDate(activityList, dateKey);
   }
 
   function findOverlappingActivity(
@@ -759,10 +762,9 @@ export default function ItineraryActivities({
     : ["All"];
   const selectedDay =
     plannerDays.find((day) => day.dateKey === selectedDate) ?? plannerDays[0];
-  const activitiesByDate = activities.reduce<Record<string, ApiActivity[]>>(
-    (groups, activity) => {
-      const key = activityDateKey(activity);
-      groups[key] = [...(groups[key] ?? []), activity];
+  const activitiesByDate = plannerDays.reduce<Record<string, ApiActivity[]>>(
+    (groups, day) => {
+      groups[day.dateKey] = getActivitiesOverlappingDate(activities, day.dateKey);
       return groups;
     },
     {},
@@ -783,7 +785,10 @@ export default function ItineraryActivities({
     travelTimeSegments,
   );
   const unplannedActivities = activities.filter(
-    (activity) => !plannerDays.some((day) => day.dateKey === activityDateKey(activity)),
+    (activity) =>
+      !plannerDays.some((day) =>
+        getActivitiesOverlappingDate([activity], day.dateKey).length > 0,
+      ),
   );
   const sortedLocations = [...locations].sort((a, b) => a.order - b.order);
 

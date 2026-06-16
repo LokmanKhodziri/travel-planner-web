@@ -9,6 +9,7 @@ import { Button } from "./ui/button";
 import { Bus, Car, Clock, Footprints, MapPin } from "lucide-react";
 import type { TravelMode } from "@/types/api";
 import { formatTravelEstimateLabel } from "@/lib/travel-modes";
+import { activityPrimaryDateKey, clipActivityToDay } from "@/lib/planner-dates";
 import ActivityNearbyMosques from "./activity-nearby-mosques";
 
 const PRAYER_ORDER = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"] as const;
@@ -31,6 +32,10 @@ interface ActivityBlock {
   activityIndex: number;
   startAt: Date;
   endAt: Date;
+  fullStartAt: Date;
+  fullEndAt: Date;
+  continuesFromPreviousDay: boolean;
+  continuesToNextDay: boolean;
   startMinutes: number;
   endMinutes: number;
 }
@@ -279,15 +284,18 @@ function buildStretchTimelineView(
 
   const activityBlocks: ActivityBlock[] = sortedActivities.map(
     (activity, index) => {
-      const startAt = new Date(activity.startTime);
-      const endAt = new Date(activity.endTime);
+      const clipped = clipActivityToDay(activity, dateKey);
       return {
         activity,
         activityIndex: index + 1,
-        startAt,
-        endAt,
-        startMinutes: minutesSinceMidnight(startAt),
-        endMinutes: minutesSinceMidnight(endAt),
+        startAt: clipped.startAt,
+        endAt: clipped.endAt,
+        fullStartAt: clipped.fullStartAt,
+        fullEndAt: clipped.fullEndAt,
+        continuesFromPreviousDay: clipped.continuesFromPreviousDay,
+        continuesToNextDay: clipped.continuesToNextDay,
+        startMinutes: minutesSinceMidnight(clipped.startAt),
+        endMinutes: minutesSinceMidnight(clipped.endAt),
       };
     },
   );
@@ -465,12 +473,23 @@ export default function PlannerStretchTimeline({
                         </div>
                         <p className='mt-1 flex items-center gap-1 text-xs text-gray-500'>
                           <Clock className='h-3.5 w-3.5 shrink-0' />
-                          {timeOnly(block.startAt)} – {timeOnly(block.endAt)}
+                          {timeOnly(block.fullStartAt)} – {timeOnly(block.fullEndAt)}
                         </p>
+                        {(block.continuesFromPreviousDay ||
+                          block.continuesToNextDay) && (
+                          <p className='mt-1 text-[11px] font-medium text-amber-700'>
+                            {block.continuesFromPreviousDay &&
+                            block.continuesToNextDay
+                              ? "Spans overnight"
+                              : block.continuesFromPreviousDay
+                                ? "Continued from previous day"
+                                : "Continues into next day"}
+                          </p>
+                        )}
                       </div>
                       <div className='flex shrink-0 flex-col gap-1.5'>
                         <select
-                          value={activityDateKey(block.activity)}
+                          value={activityPrimaryDateKey(block.activity)}
                           onChange={(e) =>
                             onMoveActivity(block.activity, e.target.value)
                           }

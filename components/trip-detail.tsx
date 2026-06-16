@@ -16,6 +16,11 @@ import ItineraryActivities from "./itinerary-activities";
 import TripExpensesPanel from "./trip-expenses-panel";
 import { formatDate } from "@/lib/utils";
 import { api } from "@/lib/api";
+import {
+  activityPrimaryDateKey,
+  getActivitiesOverlappingDate,
+  plannerDateKey,
+} from "@/lib/planner-dates";
 
 type TripActivity = Omit<ApiActivity, "createAt" | "updateAt"> & {
   createAt: Date;
@@ -46,7 +51,7 @@ interface OverviewDay {
 }
 
 function toDateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return plannerDateKey(date);
 }
 
 function buildOverviewDays(startDate: Date, endDate: Date): OverviewDay[] {
@@ -79,7 +84,7 @@ function buildOverviewDays(startDate: Date, endDate: Date): OverviewDay[] {
 }
 
 function activityDateKey(activity: Pick<TripActivity, "startTime">) {
-  return toDateKey(new Date(activity.startTime));
+  return activityPrimaryDateKey(activity);
 }
 
 function timeOnly(value: string) {
@@ -195,10 +200,9 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
   const defaultDate = trip.startDate.toISOString().slice(0, 10);
   const overviewDays = buildOverviewDays(trip.startDate, trip.endDate);
   const tripActivities = trip.activities ?? [];
-  const activitiesByDate = tripActivities.reduce<Record<string, TripActivity[]>>(
-    (groups, activity) => {
-      const key = activityDateKey(activity);
-      groups[key] = [...(groups[key] ?? []), activity];
+  const activitiesByDate = overviewDays.reduce<Record<string, TripActivity[]>>(
+    (groups, day) => {
+      groups[day.dateKey] = getActivitiesOverlappingDate(tripActivities, day.dateKey);
       return groups;
     },
     {},
