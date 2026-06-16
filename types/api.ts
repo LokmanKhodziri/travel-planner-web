@@ -123,4 +123,8 @@ export interface TransformedLocation {
   latitude: number;
   longitude: number;
   county?: string;
+  tripId: string;
+  tripTitle: string;
+  locationTitle: string;
+  order: number;
 }
