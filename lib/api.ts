@@ -121,10 +121,22 @@ export const api = {
     fetchApi<NearbyPlace[]>(
       `/api/trips/${tripId}/nearby/halal?radius=${radius}`,
     ),
-  getActivityRecommendations: (tripId: string, radius = 5000) =>
-    fetchApi<ActivityRecommendationsResponse>(
-      `/api/trips/${tripId}/activity-recommendations?radius=${radius}`,
-    ),
+  getActivityRecommendations: (
+    tripId: string,
+    radius = 5000,
+    options?: { exclude?: string[]; extended?: boolean },
+  ) => {
+    const params = new URLSearchParams({ radius: String(radius) });
+    if (options?.exclude?.length) {
+      params.set("exclude", options.exclude.join(","));
+    }
+    if (options?.extended) {
+      params.set("extended", "1");
+    }
+    return fetchApi<ActivityRecommendationsResponse>(
+      `/api/trips/${tripId}/activity-recommendations?${params.toString()}`,
+    );
+  },
   searchPlaces: (input: string) =>
     fetchApi<PlaceSuggestion[]>(
       `/api/places/search?input=${encodeURIComponent(input)}`,

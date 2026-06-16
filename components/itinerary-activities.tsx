@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type {
   ActivityRecommendationsResponse,
@@ -19,6 +19,7 @@ import {
   getActivitiesOverlappingDate,
   plannerDateKey,
 } from "@/lib/planner-dates";
+import { filterRecommendationRows } from "@/lib/recommendation-matching";
 import {
   getStoredTravelMode,
   storeTravelMode,
@@ -27,7 +28,7 @@ import {
 } from "@/lib/travel-modes";
 import { Button } from "./ui/button";
 import PlannerStretchTimeline from "./planner-stretch-timeline";
-import { CalendarDays, MapPin, Route, Sparkles } from "lucide-react";
+import { CalendarDays, MapPin, RefreshCw, Route, Sparkles } from "lucide-react";
 
 interface ItineraryActivitiesProps {
   tripId: string;
@@ -170,6 +171,13 @@ export default function ItineraryActivities({
   const [travelTimesLoading, setTravelTimesLoading] = useState(false);
   const [travelTimesError, setTravelTimesError] = useState<string | null>(null);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [recommendationsRefreshing, setRecommendationsRefreshing] =
+    useState(false);
+  const [excludedRecommendationIds, setExcludedRecommendationIds] = useState(
+    () => new Set<string>(),
+  );
+  const [recommendationRefreshCount, setRecommendationRefreshCount] =
+    useState(0);
   const [selectedDate, setSelectedDate] = useState(firstPlannerDate);
   const [activeRecommendationCategory, setActiveRecommendationCategory] =
     useState("All");
@@ -279,6 +287,45 @@ export default function ItineraryActivities({
       )
       .finally(() => setRecommendationsLoading(false));
   }, [tripId, hasLocations]);
+
+  async function handleRefreshRecommendations() {
+    if (!hasLocations || recommendationsRefreshing) return;
+
+    const currentIds =
+      recommendations?.rows.flatMap((row) =>
+        row.recommendations.map((place) => place.id),
+      ) ?? [];
+    const exclude = [
+      ...new Set([...excludedRecommendationIds, ...currentIds]),
+    ];
+    const nextRefreshCount = recommendationRefreshCount + 1;
+
+    setExcludedRecommendationIds(new Set(exclude));
+    setRecommendationRefreshCount(nextRefreshCount);
+    setRecommendationsRefreshing(true);
+    setError(null);
+
+    try {
+      const refreshed = await api.getActivityRecommendations(tripId, 5000, {
+        exclude,
+        extended: nextRefreshCount % 2 === 1,
+      });
+      setRecommendations(refreshed);
+      setActiveRecommendationCategory("All");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to refresh activity recommendations",
+      );
+    } finally {
+      setRecommendationsRefreshing(false);
+    }
+  }
+
+  function rememberExcludedRecommendation(placeId: string) {
+    setExcludedRecommendationIds((prev) => new Set([...prev, placeId]));
+  }
 
   useEffect(() => {
     const dayActivities = getActivitiesForDate(selectedDate);
@@ -597,6 +644,7 @@ export default function ItineraryActivities({
         ...prev,
         [place.id]: nextSlot,
       }));
+      rememberExcludedRecommendation(place.id);
     } catch (err) {
       setError(
         err instanceof Error
@@ -747,12 +795,25 @@ export default function ItineraryActivities({
     handleAssignDay(dateKey);
   }
 
-  const recommendationCategories = recommendations
+  const visibleRecommendations = useMemo(() => {
+    if (!recommendations) return null;
+    return {
+      ...recommendations,
+      rows: filterRecommendationRows(
+        recommendations.rows,
+        activities,
+        locations,
+        excludedRecommendationIds,
+      ),
+    };
+  }, [recommendations, activities, locations, excludedRecommendationIds]);
+
+  const recommendationCategories = visibleRecommendations
     ? [
         "All",
         ...Array.from(
           new Set(
-            recommendations.rows
+            visibleRecommendations.rows
               .flatMap((row) => row.recommendations)
               .map((place) => place.category)
               .filter((category): category is string => Boolean(category)),
@@ -760,6 +821,16 @@ export default function ItineraryActivities({
         ),
       ]
     : ["All"];
+  const visibleRecommendationCount =
+    visibleRecommendations?.rows.reduce(
+      (count, row) => count + row.recommendations.length,
+      0,
+    ) ?? 0;
+  const rawRecommendationCount =
+    recommendations?.rows.reduce(
+      (count, row) => count + row.recommendations.length,
+      0,
+    ) ?? 0;
   const selectedDay =
     plannerDays.find((day) => day.dateKey === selectedDate) ?? plannerDays[0];
   const activitiesByDate = plannerDays.reduce<Record<string, ApiActivity[]>>(
@@ -1149,12 +1220,33 @@ export default function ItineraryActivities({
               Recommended activities
             </h3>
             <p className='text-sm text-gray-600'>
-              Suggestions are based on your saved trip locations. New picks go
-              to {selectedDay?.label ?? "the selected day"} (
+              Suggestions are based on your saved trip locations. Places already
+              in your itinerary are hidden automatically. New picks go to{" "}
+              {selectedDay?.label ?? "the selected day"} (
               {selectedDay?.shortDate ?? selectedDate}).
             </p>
           </div>
-          <div className='sm:w-64'>
+          <div className='flex flex-col gap-2 sm:items-end'>
+            <Button
+              type='button'
+              size='sm'
+              variant='outline'
+              disabled={
+                !hasLocations || recommendationsLoading || recommendationsRefreshing
+              }
+              onClick={handleRefreshRecommendations}
+              className='gap-2'
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${
+                  recommendationsRefreshing ? "animate-spin" : ""
+                }`}
+              />
+              {recommendationsRefreshing
+                ? "Finding new ideas..."
+                : "Suggest new recommendations"}
+            </Button>
+            <div className='sm:w-64'>
             <label
               htmlFor='recommendation-day'
               className='mb-1 block text-xs font-medium text-gray-600'
@@ -1173,6 +1265,7 @@ export default function ItineraryActivities({
                 </option>
               ))}
             </select>
+            </div>
           </div>
         </div>
 
@@ -1183,14 +1276,40 @@ export default function ItineraryActivities({
           </p>
         ) : recommendationsLoading ? (
           <p className='text-sm text-gray-500'>Loading recommendations...</p>
-        ) : !recommendations ? (
+        ) : !visibleRecommendations ? (
           <p className='text-sm text-gray-500'>
             No recommendations loaded yet.
           </p>
+        ) : visibleRecommendationCount === 0 ? (
+          <div className='rounded-lg border border-blue-100 bg-white p-4 text-sm text-gray-600'>
+            {rawRecommendationCount > 0 ? (
+              <>
+                All current suggestions are already in your itinerary or saved
+                places. Try suggesting new recommendations for different ideas.
+              </>
+            ) : (
+              <>No new recommendations found near your trip locations right now.</>
+            )}
+            <Button
+              type='button'
+              size='sm'
+              variant='outline'
+              className='mt-3 gap-2'
+              disabled={recommendationsRefreshing}
+              onClick={handleRefreshRecommendations}
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${
+                  recommendationsRefreshing ? "animate-spin" : ""
+                }`}
+              />
+              Suggest new recommendations
+            </Button>
+          </div>
         ) : (
           <div className='space-y-5'>
             <p className='rounded-lg bg-white p-3 text-sm text-blue-800'>
-              {recommendations.note}
+              {visibleRecommendations.note}
             </p>
             <div className='flex gap-2 overflow-x-auto pb-1'>
               {recommendationCategories.map((category) => (
@@ -1208,7 +1327,7 @@ export default function ItineraryActivities({
                 </button>
               ))}
             </div>
-            {recommendations.rows.map((row) => (
+            {visibleRecommendations.rows.map((row) => (
               <div
                 key={row.sourceLocation.id}
                 className='rounded-lg border border-blue-100 bg-white p-4'
