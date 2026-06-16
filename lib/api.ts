@@ -103,10 +103,20 @@ export const api = {
     fetchApi<PrayerTimings>(
       `/api/trips/${tripId}/prayer-times?date=${encodeURIComponent(date)}`,
     ),
-  getNearbyMosques: (tripId: string, radius = 5000) =>
-    fetchApi<NearbyPlace[]>(
-      `/api/trips/${tripId}/nearby/mosques?radius=${radius}`,
-    ),
+  getNearbyMosques: (
+    tripId: string,
+    radius = 5000,
+    coords?: { latitude: number; longitude: number },
+  ) => {
+    const params = new URLSearchParams({ radius: String(radius) });
+    if (coords) {
+      params.set("latitude", String(coords.latitude));
+      params.set("longitude", String(coords.longitude));
+    }
+    return fetchApi<NearbyPlace[]>(
+      `/api/trips/${tripId}/nearby/mosques?${params.toString()}`,
+    );
+  },
   getNearbyHalal: (tripId: string, radius = 5000) =>
     fetchApi<NearbyPlace[]>(
       `/api/trips/${tripId}/nearby/halal?radius=${radius}`,

@@ -9,6 +9,7 @@ import { Button } from "./ui/button";
 import { Bus, Car, Clock, Footprints, MapPin } from "lucide-react";
 import type { TravelMode } from "@/types/api";
 import { formatTravelEstimateLabel } from "@/lib/travel-modes";
+import ActivityNearbyMosques from "./activity-nearby-mosques";
 
 const PRAYER_ORDER = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"] as const;
 const GAP_COMPRESS_THRESHOLD_MIN = 60;
@@ -55,6 +56,7 @@ interface StretchTimelineView {
 }
 
 interface PlannerStretchTimelineProps {
+  tripId: string;
   dateKey: string;
   activities: ApiActivity[];
   prayerTimes: PrayerTimings | null;
@@ -346,6 +348,7 @@ function renderTravelContent(
 }
 
 export default function PlannerStretchTimeline({
+  tripId,
   dateKey,
   activities,
   prayerTimes,
@@ -369,7 +372,7 @@ export default function PlannerStretchTimeline({
   if (view.items.length === 0 && view.prayers.length === 0) return null;
 
   const gridColumns = showPrayerTimes
-    ? "48px minmax(0, 1fr) 96px"
+    ? "48px minmax(0, 1fr) 112px"
     : "48px minmax(0, 1fr)";
   const prayersByRow =
     showPrayerTimes && view.prayers.length > 0
@@ -387,7 +390,7 @@ export default function PlannerStretchTimeline({
           <span>Activity</span>
           {showPrayerTimes && (
             <span className='border-l border-emerald-100 pl-2 text-center text-emerald-800'>
-              Salah
+              Salah & masjid
             </span>
           )}
         </div>
@@ -525,6 +528,15 @@ export default function PlannerStretchTimeline({
                 {showPrayerTimes && (
                   <div className='border-l border-emerald-100/80 pl-2 pt-1'>
                     <PrayerCell prayers={prayersByRow.get(index) ?? []} />
+                    {block.activity.latitude != null &&
+                      block.activity.longitude != null && (
+                        <ActivityNearbyMosques
+                          tripId={tripId}
+                          activityTitle={block.activity.title}
+                          latitude={block.activity.latitude}
+                          longitude={block.activity.longitude}
+                        />
+                      )}
                   </div>
                 )}
               </div>

@@ -977,6 +977,7 @@ export default function ItineraryActivities({
             </div>
           ) : (
             <PlannerStretchTimeline
+              tripId={tripId}
               dateKey={selectedDate}
               activities={selectedActivities}
               prayerTimes={prayerTimes}
