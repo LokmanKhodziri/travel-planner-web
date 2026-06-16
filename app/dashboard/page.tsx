@@ -19,22 +19,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-function localDateKey(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function isTripActiveOnDate(trip: ApiTrip, date: Date) {
-  const start = new Date(trip.startDate);
-  const end = new Date(trip.endDate);
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
-  const cursor = new Date(date);
-  cursor.setHours(12, 0, 0, 0);
-  return cursor >= start && cursor <= end;
-}
+import {
+  isTripActiveOnDate,
+  isTripUpcoming,
+  localDateKey,
+} from "@/lib/trip-dates";
 
 export default async function DashboardPage() {
   const session = await getSession();
@@ -57,9 +46,7 @@ export default async function DashboardPage() {
   today.setHours(0, 0, 0, 0);
   const todayKey = localDateKey(today);
   const todayTrips = sortedTrips.filter((trip) => isTripActiveOnDate(trip, today));
-  const upcomingTrips = sortedTrips.filter(
-    (t) => new Date(t.startDate) >= today,
-  );
+  const upcomingTrips = sortedTrips.filter((trip) => isTripUpcoming(trip, today));
   const recentTrips = sortedTrips
     .filter((trip) => !todayTrips.some((todayTrip) => todayTrip.id === trip.id))
     .slice(0, 3);
