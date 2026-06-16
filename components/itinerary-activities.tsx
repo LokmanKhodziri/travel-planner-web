@@ -21,6 +21,11 @@ import {
 } from "@/lib/planner-dates";
 import { filterRecommendationRows } from "@/lib/recommendation-matching";
 import {
+  getOpeningHoursLabel,
+  isVisitWithinOpeningHours,
+  suggestRecommendationTimeSlot,
+} from "@/lib/recommendation-schedule";
+import {
   getStoredTravelMode,
   storeTravelMode,
   TRAVEL_MODE_OPTIONS,
@@ -51,6 +56,35 @@ interface PlannerDay {
 
 const DEFAULT_ACTIVITY_DURATION_MINUTES = 120;
 const PLANNER_DAY_START_HOUR = 9;
+const RECOMMENDATION_CATEGORY_ORDER = [
+  "Attraction",
+  "Museum",
+  "Park",
+  "Shopping",
+  "Gallery",
+  "Theme park",
+  "Aquarium",
+  "Zoo",
+  "Local special",
+] as const;
+
+function buildRecommendationCategories(categories: Iterable<string | undefined>) {
+  const discovered = new Set(
+    [...categories].filter((category): category is string => Boolean(category)),
+  );
+  const ordered = RECOMMENDATION_CATEGORY_ORDER.filter((category) =>
+    discovered.has(category),
+  );
+  const extras = [...discovered]
+    .filter(
+      (category) =>
+        !RECOMMENDATION_CATEGORY_ORDER.includes(
+          category as (typeof RECOMMENDATION_CATEGORY_ORDER)[number],
+        ),
+    )
+    .sort();
+  return ["All", ...ordered, ...extras];
+}
 
 function toDateKey(date: Date) {
   return plannerDateKey(date);
@@ -461,29 +495,69 @@ export default function ItineraryActivities({
     };
   }
 
-  function showNextAvailableRecommendationTime(placeId: string) {
-    const nextSlot = findNextAvailableSlot();
+  function computeRecommendationTime(place: NearbyPlace) {
+    const suggested = suggestRecommendationTimeSlot({
+      place,
+      dateKey: selectedDate,
+      activities,
+      durationMinutes: DEFAULT_ACTIVITY_DURATION_MINUTES,
+    });
+    return {
+      startTime: suggested.startTime,
+      endTime: suggested.endTime,
+      scheduleNote: suggested.scheduleNote,
+      withinOpeningHours: suggested.withinOpeningHours,
+    };
+  }
+
+  function showNextAvailableRecommendationTime(place: NearbyPlace) {
+    const nextSlot = computeRecommendationTime(place);
     setRecommendationTimes((prev) => ({
       ...prev,
-      [placeId]: nextSlot,
+      [place.id]: {
+        startTime: nextSlot.startTime,
+        endTime: nextSlot.endTime,
+      },
     }));
     return nextSlot;
   }
 
-  function defaultRecommendationTime(placeId: string) {
-    return recommendationTimes[placeId] ?? findNextAvailableSlot();
+  function defaultRecommendationTime(place: NearbyPlace) {
+    if (recommendationTimes[place.id]) {
+      return recommendationTimes[place.id];
+    }
+    const suggested = computeRecommendationTime(place);
+    return {
+      startTime: suggested.startTime,
+      endTime: suggested.endTime,
+    };
+  }
+
+  function getRecommendationScheduleMeta(place: NearbyPlace) {
+    const suggested = computeRecommendationTime(place);
+    const stored = recommendationTimes[place.id];
+    const start = new Date(stored?.startTime ?? suggested.startTime);
+    const end = new Date(stored?.endTime ?? suggested.endTime);
+    const hoursCheck = isVisitWithinOpeningHours(place, start, end, selectedDate);
+
+    return {
+      scheduleNote: stored ? undefined : suggested.scheduleNote,
+      hoursLabel: getOpeningHoursLabel(place.openingHours, selectedDate),
+      outsideOpeningHours: !hoursCheck.ok,
+      openingHoursWarning: hoursCheck.ok ? null : hoursCheck.reason,
+    };
   }
 
   function updateRecommendationTime(
-    placeId: string,
+    place: NearbyPlace,
     field: "startTime" | "endTime",
     value: string,
   ) {
     setRecommendationTimes((prev) => ({
       ...prev,
-      [placeId]: {
-        ...defaultRecommendationTime(placeId),
-        ...prev[placeId],
+      [place.id]: {
+        ...defaultRecommendationTime(place),
+        ...prev[place.id],
         [field]: value,
       },
     }));
@@ -584,7 +658,7 @@ export default function ItineraryActivities({
     place: NearbyPlace,
     sourceTitle: string,
   ) {
-    const time = defaultRecommendationTime(place.id);
+    const time = defaultRecommendationTime(place);
     const start = new Date(time.startTime);
     const end = new Date(time.endTime);
 
@@ -599,7 +673,7 @@ export default function ItineraryActivities({
 
     const overlappingActivity = findOverlappingActivity(start, end);
     if (overlappingActivity) {
-      const nextSlot = showNextAvailableRecommendationTime(place.id);
+      const nextSlot = showNextAvailableRecommendationTime(place);
       setError(
         `"${overlappingActivity.title}" already uses that time. Showing next available time: ${timeOnly(
           nextSlot.startTime,
@@ -809,17 +883,11 @@ export default function ItineraryActivities({
   }, [recommendations, activities, locations, excludedRecommendationIds]);
 
   const recommendationCategories = visibleRecommendations
-    ? [
-        "All",
-        ...Array.from(
-          new Set(
-            visibleRecommendations.rows
-              .flatMap((row) => row.recommendations)
-              .map((place) => place.category)
-              .filter((category): category is string => Boolean(category)),
-          ),
+    ? buildRecommendationCategories(
+        visibleRecommendations.rows.flatMap((row) =>
+          row.recommendations.map((place) => place.category),
         ),
-      ]
+      )
     : ["All"];
   const visibleRecommendationCount =
     visibleRecommendations?.rows.reduce(
@@ -1364,7 +1432,8 @@ export default function ItineraryActivities({
                   return (
                     <div className='grid gap-3 lg:grid-cols-2'>
                       {filteredRecommendations.slice(0, 6).map((place) => {
-                        const time = defaultRecommendationTime(place.id);
+                        const time = defaultRecommendationTime(place);
+                        const scheduleMeta = getRecommendationScheduleMeta(place);
                         const selectedStart = new Date(time.startTime);
                         const selectedEnd = new Date(time.endTime);
                         const overlappingActivity =
@@ -1373,7 +1442,7 @@ export default function ItineraryActivities({
                             ? null
                             : findOverlappingActivity(selectedStart, selectedEnd);
                         const nextAvailableTime = overlappingActivity
-                          ? findNextAvailableSlot()
+                          ? computeRecommendationTime(place)
                           : null;
 
                         return (
@@ -1403,6 +1472,20 @@ export default function ItineraryActivities({
                               {place.rating != null && (
                                 <span>Rating {place.rating.toFixed(1)}</span>
                               )}
+                              {scheduleMeta.hoursLabel && (
+                                <span>{scheduleMeta.hoursLabel}</span>
+                              )}
+                              {place.openNow != null && (
+                                <span
+                                  className={
+                                    place.openNow
+                                      ? "text-emerald-700"
+                                      : "text-amber-700"
+                                  }
+                                >
+                                  {place.openNow ? "Open now" : "Closed now"}
+                                </span>
+                              )}
                               <a
                                 href={`https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}`}
                                 target='_blank'
@@ -1418,7 +1501,7 @@ export default function ItineraryActivities({
                                 value={time.startTime}
                                 onChange={(e) =>
                                   updateRecommendationTime(
-                                    place.id,
+                                    place,
                                     "startTime",
                                     e.target.value,
                                   )
@@ -1430,7 +1513,7 @@ export default function ItineraryActivities({
                                 value={time.endTime}
                                 onChange={(e) =>
                                   updateRecommendationTime(
-                                    place.id,
+                                    place,
                                     "endTime",
                                     e.target.value,
                                   )
@@ -1438,11 +1521,21 @@ export default function ItineraryActivities({
                                 className='rounded-lg border border-gray-300 p-2 text-sm'
                               />
                             </div>
+                            {scheduleMeta.scheduleNote && (
+                              <p className='mt-2 rounded-lg bg-blue-50 p-2 text-xs text-blue-800'>
+                                {scheduleMeta.scheduleNote}
+                              </p>
+                            )}
+                            {scheduleMeta.openingHoursWarning && (
+                              <p className='mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-700'>
+                                {scheduleMeta.openingHoursWarning}
+                              </p>
+                            )}
                             {overlappingActivity && nextAvailableTime && (
                               <p className='mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-700'>
                                 This time is unavailable because it overlaps
-                                with "{overlappingActivity.title}". Next
-                                available: {timeOnly(nextAvailableTime.startTime)}{" "}
+                                with "{overlappingActivity.title}". Suggested
+                                time: {timeOnly(nextAvailableTime.startTime)}{" "}
                                 - {timeOnly(nextAvailableTime.endTime)}.
                               </p>
                             )}

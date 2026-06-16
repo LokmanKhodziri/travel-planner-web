@@ -86,6 +86,19 @@ export interface PrayerTimings {
   };
 }
 
+export interface PlaceOpeningPeriod {
+  openDay: number;
+  openTime: string;
+  closeDay: number;
+  closeTime?: string;
+}
+
+export interface PlaceOpeningHours {
+  openNow?: boolean;
+  weekdayText?: string[];
+  periods?: PlaceOpeningPeriod[];
+}
+
 export interface NearbyPlace {
   id: string;
   name: string;
@@ -95,6 +108,7 @@ export interface NearbyPlace {
   rating?: number;
   userRatingsTotal?: number;
   openNow?: boolean;
+  openingHours?: PlaceOpeningHours;
   category?: string;
   about: string;
 }
