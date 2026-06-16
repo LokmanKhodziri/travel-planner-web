@@ -12,9 +12,10 @@ import type {
   PrayerTimings,
 } from "@/types/api";
 import { formatDateTime } from "@/lib/utils";
+import { computeTravelAdjustedSchedule } from "@/lib/planner-schedule";
 import { Button } from "./ui/button";
 import PlannerStretchTimeline from "./planner-stretch-timeline";
-import { CalendarDays, MapPin, Sparkles } from "lucide-react";
+import { CalendarDays, Car, MapPin, Sparkles } from "lucide-react";
 
 interface ItineraryActivitiesProps {
   tripId: string;
@@ -179,6 +180,8 @@ export default function ItineraryActivities({
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [movingActivityId, setMovingActivityId] = useState<string | null>(null);
+  const [syncingSchedule, setSyncingSchedule] = useState(false);
+  const [scheduleNotice, setScheduleNotice] = useState<string | null>(null);
   const [prayerTimes, setPrayerTimes] = useState<PrayerTimings | null>(null);
   const [prayerTimesLoading, setPrayerTimesLoading] = useState(false);
   const [prayerTimesError, setPrayerTimesError] = useState<string | null>(null);
@@ -371,17 +374,18 @@ export default function ItineraryActivities({
     activityList: ApiActivity[] = activities,
     durationMinutes = DEFAULT_ACTIVITY_DURATION_MINUTES,
   ) {
-    let cursor = buildDateTime(dateKey, PLANNER_DAY_START_HOUR);
+    const dayActivities = getActivitiesForDate(dateKey, activityList);
 
-    for (const activity of getActivitiesForDate(dateKey, activityList)) {
-      const activityStart = new Date(activity.startTime);
-      const activityEnd = new Date(activity.endTime);
-      const candidateEnd = addMinutes(cursor, durationMinutes);
-
-      if (candidateEnd <= activityStart) break;
-      if (cursor < activityEnd) cursor = activityEnd;
+    if (dayActivities.length > 0) {
+      const lastActivity = dayActivities[dayActivities.length - 1];
+      const cursor = addMinutes(new Date(lastActivity.endTime), 15);
+      return {
+        startTime: toDateTimeLocalValue(cursor),
+        endTime: toDateTimeLocalValue(addMinutes(cursor, durationMinutes)),
+      };
     }
 
+    const cursor = buildDateTime(dateKey, PLANNER_DAY_START_HOUR);
     return {
       startTime: toDateTimeLocalValue(cursor),
       endTime: toDateTimeLocalValue(addMinutes(cursor, durationMinutes)),
@@ -567,6 +571,71 @@ export default function ItineraryActivities({
     }
   }
 
+  async function handleSyncScheduleWithTravel() {
+    const dayActivities = getActivitiesForDate(selectedDate);
+    if (dayActivities.length < 2) {
+      setError("Add at least two activities on this day to adjust for travel time.");
+      return;
+    }
+
+    const updates = computeTravelAdjustedSchedule(
+      dayActivities,
+      travelTimeSegments,
+    );
+
+    if (updates.length === 0) {
+      setScheduleNotice(
+        "Schedule already leaves room for travel, or driving estimates are unavailable.",
+      );
+      return;
+    }
+
+    const summary = updates
+      .map(
+        (update) =>
+          `${update.title}: +${update.travelMinutes} min travel before start`,
+      )
+      .join("\n");
+
+    const confirmed = window.confirm(
+      `Shift ${updates.length} later activit${updates.length === 1 ? "y" : "ies"} to include driving time between stops?\n\n${summary}`,
+    );
+    if (!confirmed) return;
+
+    setSyncingSchedule(true);
+    setError(null);
+    setScheduleNotice(null);
+
+    try {
+      const updatedActivities = await Promise.all(
+        updates.map((update) =>
+          api.updateActivity(tripId, update.activityId, {
+            startTime: update.startTime,
+            endTime: update.endTime,
+          }),
+        ),
+      );
+
+      const updatedById = new Map(
+        updatedActivities.map((activity) => [activity.id, activity]),
+      );
+      setActivities((prev) =>
+        prev
+          .map((activity) => updatedById.get(activity.id) ?? activity)
+          .sort((a, b) => a.startTime.localeCompare(b.startTime)),
+      );
+      setScheduleNotice(
+        `Updated ${updates.length} activit${updates.length === 1 ? "y" : "ies"} to include travel time between stops.`,
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to adjust schedule",
+      );
+    } finally {
+      setSyncingSchedule(false);
+    }
+  }
+
   async function handleMoveActivity(
     activity: ApiActivity,
     targetDateKey: string,
@@ -610,6 +679,7 @@ export default function ItineraryActivities({
     setStartTime("");
     setEndTime("");
     setRecommendationTimes({});
+    setScheduleNotice(null);
     resetActivityLocation();
   }
 
@@ -656,6 +726,10 @@ export default function ItineraryActivities({
   const hasTimelineContent =
     selectedActivities.length > 0 ||
     (showPrayerTimes && prayerTimes != null);
+  const pendingTravelAdjustments = computeTravelAdjustedSchedule(
+    selectedActivities,
+    travelTimeSegments,
+  );
   const unplannedActivities = activities.filter(
     (activity) => !plannerDays.some((day) => day.dateKey === activityDateKey(activity)),
   );
@@ -762,10 +836,32 @@ export default function ItineraryActivities({
                 {prayerTimes ? ` · ${prayerTimes.timezone}` : ""}
               </p>
               <p className='mt-1 text-xs text-gray-500'>
-                Blocks stretch by duration; prayers stack inside overlapping plans.
+                Activities in the center, drive gaps between them, prayer times in
+                the Salah column on the right.
               </p>
             </div>
             <div className='flex flex-wrap items-center gap-3'>
+              {selectedActivities.length >= 2 && (
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  className='gap-2'
+                  disabled={
+                    syncingSchedule ||
+                    travelTimesLoading ||
+                    pendingTravelAdjustments.length === 0
+                  }
+                  onClick={handleSyncScheduleWithTravel}
+                >
+                  <Car className='h-4 w-4' />
+                  {syncingSchedule
+                    ? "Adjusting..."
+                    : pendingTravelAdjustments.length > 0
+                      ? `Add travel gaps (${pendingTravelAdjustments.length})`
+                      : "Travel gaps applied"}
+                </Button>
+              )}
               {hasLocations && (
                 <label className='flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800'>
                   <input
@@ -783,6 +879,12 @@ export default function ItineraryActivities({
               </span>
             </div>
           </div>
+
+          {scheduleNotice && (
+            <p className='mb-3 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800'>
+              {scheduleNotice}
+            </p>
+          )}
 
           {loading || prayerTimesLoading ? (
             <p className='text-sm text-gray-500'>
