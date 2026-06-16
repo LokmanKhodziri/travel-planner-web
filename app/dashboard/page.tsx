@@ -1,7 +1,13 @@
 import { getSession, fetchApiServer } from "@/lib/auth";
+import TodayTripHighlight from "@/components/today-trip-highlight";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { ApiTrip } from "@/types/api";
+import type {
+  ApiActivity,
+  ApiLocation,
+  ApiTrip,
+  PrayerTimings,
+} from "@/types/api";
 import {
   ArrowRight,
   CalendarIcon,
@@ -12,6 +18,23 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+
+function localDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isTripActiveOnDate(trip: ApiTrip, date: Date) {
+  const start = new Date(trip.startDate);
+  const end = new Date(trip.endDate);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(23, 59, 59, 999);
+  const cursor = new Date(date);
+  cursor.setHours(12, 0, 0, 0);
+  return cursor >= start && cursor <= end;
+}
 
 export default async function DashboardPage() {
   const session = await getSession();
@@ -32,10 +55,36 @@ export default async function DashboardPage() {
   );
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayKey = localDateKey(today);
+  const todayTrips = sortedTrips.filter((trip) => isTripActiveOnDate(trip, today));
   const upcomingTrips = sortedTrips.filter(
     (t) => new Date(t.startDate) >= today,
   );
-  const recentTrips = sortedTrips.slice(0, 3);
+  const recentTrips = sortedTrips
+    .filter((trip) => !todayTrips.some((todayTrip) => todayTrip.id === trip.id))
+    .slice(0, 3);
+
+  let todayTripDetail:
+    | (ApiTrip & { locations: ApiLocation[]; activities: ApiActivity[] })
+    | null = null;
+  let todayPrayerTimes: PrayerTimings | null = null;
+
+  if (todayTrips[0]) {
+    try {
+      todayTripDetail = await fetchApiServer<
+        ApiTrip & { locations: ApiLocation[]; activities: ApiActivity[] }
+      >(`/api/trips/${todayTrips[0].id}`);
+
+      if (todayTripDetail.locations.length > 0) {
+        todayPrayerTimes = await fetchApiServer<PrayerTimings>(
+          `/api/trips/${todayTrips[0].id}/prayer-times?date=${encodeURIComponent(todayKey)}`,
+        );
+      }
+    } catch {
+      todayTripDetail = null;
+      todayPrayerTimes = null;
+    }
+  }
 
   return (
     <div className='container mx-auto space-y-8 px-4 py-10'>
@@ -48,6 +97,14 @@ export default async function DashboardPage() {
         </p>
       </header>
 
+      {todayTripDetail && (
+        <TodayTripHighlight
+          trip={todayTripDetail}
+          prayerTimes={todayPrayerTimes}
+          todayKey={todayKey}
+        />
+      )}
+
       <section>
         <Card className='border-gray-200 bg-gradient-to-br from-blue-50 to-emerald-50'>
           <CardHeader>
@@ -59,11 +116,13 @@ export default async function DashboardPage() {
             <p className='text-gray-600'>
               {trips.length === 0
                 ? "You have no trips planned yet. Create your first trip to get started."
-                : `You have ${trips.length} trip${trips.length > 1 ? "s" : ""} in total${
-                    upcomingTrips.length > 0
-                      ? `, with ${upcomingTrips.length} upcoming.`
-                      : "."
-                  }`}
+                : todayTrips.length > 0
+                  ? `You have ${todayTrips.length} trip${todayTrips.length > 1 ? "s" : ""} happening today and ${upcomingTrips.length} upcoming in total.`
+                  : `You have ${trips.length} trip${trips.length > 1 ? "s" : ""} in total${
+                      upcomingTrips.length > 0
+                        ? `, with ${upcomingTrips.length} upcoming.`
+                        : "."
+                    }`}
             </p>
             <div className='flex flex-wrap gap-3'>
               <Link href='/trips/new'>
@@ -115,12 +174,12 @@ export default async function DashboardPage() {
         <Card>
           <CardHeader className='pb-2'>
             <CardTitle className='text-sm font-medium text-gray-500'>
-              Past Trips
+              Today
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className='text-3xl font-bold text-gray-900'>
-              {trips.length - upcomingTrips.length}
+              {todayTrips.length}
             </p>
           </CardContent>
         </Card>
@@ -128,7 +187,9 @@ export default async function DashboardPage() {
 
       <section>
         <div className='mb-4 flex items-center justify-between gap-4'>
-          <h2 className='text-2xl font-semibold'>Recent Trips</h2>
+          <h2 className='text-2xl font-semibold'>
+            {todayTrips.length > 0 ? "More trips" : "Recent Trips"}
+          </h2>
           {trips.length > 0 && (
             <Link
               href='/trips'
@@ -142,13 +203,21 @@ export default async function DashboardPage() {
         {recentTrips.length === 0 ? (
           <Card className='flex flex-col items-center justify-center py-12 text-center'>
             <CardContent>
-              <h3 className='mb-2 text-xl font-medium'>No trips yet</h3>
+              <h3 className='mb-2 text-xl font-medium'>
+                {todayTrips.length > 0
+                  ? "You're focused on today's trip"
+                  : "No trips yet"}
+              </h3>
               <p className='mb-6 max-w-sm text-gray-500'>
-                Create your first trip to start planning day-by-day itineraries.
+                {todayTrips.length > 0
+                  ? "Other trips will appear here when you have more planned."
+                  : "Create your first trip to start planning day-by-day itineraries."}
               </p>
-              <Link href='/trips/new'>
-                <Button>Create a New Trip</Button>
-              </Link>
+              {trips.length === 0 && (
+                <Link href='/trips/new'>
+                  <Button>Create a New Trip</Button>
+                </Link>
+              )}
             </CardContent>
           </Card>
         ) : (
