@@ -63,4 +63,8 @@
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
+  .touch-scroll-x {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
 }

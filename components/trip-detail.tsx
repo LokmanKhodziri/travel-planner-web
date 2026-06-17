@@ -94,6 +94,23 @@ function timeOnly(value: string) {
   });
 }
 
+function locationsAreNearby(
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number },
+) {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const earthRadiusM = 6371000;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLng = toRad(b.longitude - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+  const haversine =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  const distanceM = earthRadiusM * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+  return distanceM < 150;
+}
+
 export default function TripDetailClient({ trip }: TripDetailClientProps) {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState("overview");
@@ -118,6 +135,16 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
   const handleLocationAdded = (location: ApiLocation) => {
     setTripLocations((prev) => {
       if (prev.some((item) => item.id === location.id)) return prev;
+      if (
+        prev.some((item) =>
+          locationsAreNearby(item, {
+            latitude: location.latitude,
+            longitude: location.longitude,
+          }),
+        )
+      ) {
+        return prev;
+      }
       return [
         ...prev,
         {
@@ -132,69 +159,26 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
   useEffect(() => {
     let cancelled = false;
 
-    const applyLocations = (locations: ApiLocation[]) => {
-      if (cancelled) return;
-      setTripLocations(
-        locations.map((location) => ({
-          ...location,
-          createAt: new Date(location.createAt),
-          updateAt: location.updateAt ? new Date(location.updateAt) : null,
-        })),
-      );
-    };
-
-    const fallbackSyncFromActivities = async () => {
-      const activities = trip.activities ?? [];
-      if (activities.length === 0) return;
-
-      let merged = [...trip.locations];
-      for (const activity of activities) {
-        const hasCoords =
-          activity.latitude != null && activity.longitude != null;
-        const hasAddress = Boolean(activity.address?.trim());
-        if (!hasCoords && !hasAddress) continue;
-
-        try {
-          const location = await api.addLocation(
-            trip.id,
-            activity.address?.trim() || activity.title,
-            {
-              locationTitle: activity.title,
-              latitude: hasCoords ? activity.latitude! : undefined,
-              longitude: hasCoords ? activity.longitude! : undefined,
-            },
-          );
-          if (!merged.some((item) => item.id === location.id)) {
-            merged = [
-              ...merged,
-              {
-                ...location,
-                createAt: new Date(location.createAt),
-                updateAt: location.updateAt ? new Date(location.updateAt) : null,
-              },
-            ];
-          }
-        } catch {
-          // Skip activities that cannot be synced.
-        }
-      }
-
-      if (cancelled) return;
-      setTripLocations(merged.sort((a, b) => a.order - b.order));
-    };
-
     api
       .syncLocationsFromActivities(trip.id)
-      .then(applyLocations)
-      .catch(async (err) => {
+      .then((locations) => {
+        if (cancelled) return;
+        setTripLocations(
+          locations.map((location) => ({
+            ...location,
+            createAt: new Date(location.createAt),
+            updateAt: location.updateAt ? new Date(location.updateAt) : null,
+          })),
+        );
+      })
+      .catch((err) => {
         console.error("Failed to sync planner places to locations:", err);
-        await fallbackSyncFromActivities();
       });
 
     return () => {
       cancelled = true;
     };
-  }, [trip.id, trip.activities, trip.locations]);
+  }, [trip.id]);
 
   const hasLocations = tripLocations.length > 0;
   const defaultDate = trip.startDate.toISOString().slice(0, 10);
@@ -212,7 +196,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
   ).length;
 
   return (
-    <div className='container mx-auto px-4 py-8 space-y-8'>
+    <div className='container mx-auto min-w-0 max-w-full space-y-6 px-3 py-6 sm:space-y-8 sm:px-4 sm:py-8'>
       {trip.imageUrl && (
         <div className='w-full h-72 md:h-96 overflow-hidden rounded-xl shadow-lg relative'>
           <Image
@@ -249,52 +233,55 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
         </div>
       </div>
 
-      <div className='bg-white p-6 shadow rounded-lg'>
+      <div className='rounded-lg bg-white p-4 shadow sm:p-6'>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className='mb-6 flex w-full flex-row flex-nowrap gap-2 overflow-x-auto overflow-y-hidden pb-1 pr-2 no-scrollbar'>
+          <div className='-mx-1 mb-4 touch-scroll-x overflow-x-auto px-1 pb-1 no-scrollbar sm:mb-6'>
+            <TabsList className='inline-flex h-auto min-w-max gap-1 p-1'>
             <TabsTrigger
               value='overview'
-              className='text-sm font-semibold whitespace-nowrap'
+              className='shrink-0 px-3 py-2 text-sm font-semibold whitespace-nowrap'
             >
               Overview
             </TabsTrigger>
             <TabsTrigger
               value='itinerary'
-              className='text-sm font-semibold whitespace-nowrap'
+              className='shrink-0 px-3 py-2 text-sm font-semibold whitespace-nowrap'
             >
               Locations
             </TabsTrigger>
             <TabsTrigger
               value='activities'
-              className='text-sm font-semibold whitespace-nowrap'
+              className='shrink-0 px-3 py-2 text-sm font-semibold whitespace-nowrap'
             >
               Planner
             </TabsTrigger>
             <TabsTrigger
               value='expenses'
-              className='text-sm font-semibold whitespace-nowrap'
+              className='shrink-0 px-3 py-2 text-sm font-semibold whitespace-nowrap'
             >
               Expenses
             </TabsTrigger>
             <TabsTrigger
               value='prayer'
-              className='text-sm font-semibold whitespace-nowrap'
+              className='shrink-0 px-3 py-2 text-sm font-semibold whitespace-nowrap'
             >
-              Prayer Times
+              <span className='sm:hidden'>Prayer</span>
+              <span className='hidden sm:inline'>Prayer Times</span>
             </TabsTrigger>
             <TabsTrigger
               value='nearby'
-              className='text-sm font-semibold whitespace-nowrap'
+              className='shrink-0 px-3 py-2 text-sm font-semibold whitespace-nowrap'
             >
               Nearby
             </TabsTrigger>
             <TabsTrigger
               value='map'
-              className='text-sm font-semibold whitespace-nowrap'
+              className='shrink-0 px-3 py-2 text-sm font-semibold whitespace-nowrap'
             >
               Map
             </TabsTrigger>
-          </TabsList>
+            </TabsList>
+          </div>
 
           <TabsContent value='overview'>
             <div>

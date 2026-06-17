@@ -598,6 +598,25 @@ export default function ItineraryActivities({
     const address = input.address?.trim() || input.title;
     if (!hasCoords && !input.address?.trim()) return;
 
+    const alreadySaved = locations.some((location) => {
+      if (hasCoords) {
+        const toRad = (deg: number) => (deg * Math.PI) / 180;
+        const earthRadiusM = 6371000;
+        const dLat = toRad(input.latitude! - location.latitude);
+        const dLng = toRad(input.longitude! - location.longitude);
+        const lat1 = toRad(location.latitude);
+        const lat2 = toRad(input.latitude!);
+        const haversine =
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+        const distanceM =
+          earthRadiusM * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+        return distanceM < 150;
+      }
+      return location.locationTitle.trim().toLowerCase() === input.title.trim().toLowerCase();
+    });
+    if (alreadySaved) return;
+
     try {
       const location = await api.addLocation(tripId, address, {
         locationTitle: input.title,
@@ -1046,8 +1065,8 @@ export default function ItineraryActivities({
   const sortedLocations = [...locations].sort((a, b) => a.order - b.order);
 
   return (
-    <div className='space-y-6'>
-      <section className='rounded-xl border border-gray-200 bg-white p-4 shadow-sm'>
+    <div className='min-w-0 max-w-full space-y-6 overflow-x-hidden'>
+      <section className='rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4'>
         <div className='flex flex-col gap-3 md:flex-row md:items-center md:justify-between'>
           <div>
             <div className='flex items-center gap-2 text-blue-700'>
@@ -1067,7 +1086,7 @@ export default function ItineraryActivities({
           </div>
         </div>
 
-        <div className='mt-4 flex gap-2 overflow-x-auto pb-1'>
+        <div className='mt-4 touch-scroll-x flex gap-2 overflow-x-auto pb-1'>
           {plannerDays.map((day) => {
             const count = activitiesByDate[day.dateKey]?.length ?? 0;
             return (
@@ -1091,9 +1110,9 @@ export default function ItineraryActivities({
           })}
         </div>
 
-        <div className='mt-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4'>
+        <div className='mt-4 rounded-xl border border-blue-100 bg-blue-50/60 p-3 sm:p-4'>
           <div className='flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between'>
-            <div className='flex-1'>
+            <div className='min-w-0 flex-1'>
               <label
                 htmlFor='assign-day'
                 className='mb-2 block text-sm font-medium text-gray-800'
@@ -1104,7 +1123,7 @@ export default function ItineraryActivities({
                 id='assign-day'
                 value={selectedDate}
                 onChange={(e) => handleAssignDay(e.target.value)}
-                className='w-full rounded-lg border border-gray-300 bg-white p-3 text-sm'
+                className='w-full min-w-0 rounded-lg border border-gray-300 bg-white p-3 text-sm'
               >
                 {plannerDays.map((day) => {
                   const count = activitiesByDate[day.dateKey]?.length ?? 0;
@@ -1124,7 +1143,7 @@ export default function ItineraryActivities({
             <Button
               type='button'
               variant='outline'
-              className='shrink-0 gap-2 bg-white'
+              className='w-full shrink-0 gap-2 bg-white sm:w-auto'
               onClick={handleSuggestDay}
             >
               <Sparkles className='h-4 w-4' />
@@ -1134,10 +1153,10 @@ export default function ItineraryActivities({
         </div>
       </section>
 
-      <section className='grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]'>
-        <div className='rounded-xl border border-gray-200 bg-white p-4 shadow-sm'>
-          <div className='mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
-            <div>
+      <section className='grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]'>
+        <div className='min-w-0 rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4'>
+          <div className='mb-4 flex flex-col gap-3'>
+            <div className='min-w-0'>
               <h3 className='text-lg font-semibold text-gray-900'>
                 {selectedDay?.label ?? "Selected day"} timeline
               </h3>
@@ -1145,23 +1164,23 @@ export default function ItineraryActivities({
                 {selectedDay?.shortDate ?? selectedDate}
                 {prayerTimes ? ` · ${prayerTimes.timezone}` : ""}
               </p>
-              <p className='mt-1 text-xs text-gray-500'>
+              <p className='mt-1 hidden text-xs text-gray-500 sm:block'>
                 Activities stack in order with travel info on each card. Nearby
                 stops automatically use walking. Prayer times appear on the
-                right.
+                right on larger screens.
               </p>
             </div>
-            <div className='flex flex-wrap items-center gap-3'>
+            <div className='flex min-w-0 flex-wrap items-center gap-2 sm:gap-3'>
               {selectedActivities.length >= 2 && (
                 <>
-                  <label className='flex items-center gap-2 text-xs font-medium text-gray-600'>
-                    <span className='hidden sm:inline'>Travel by</span>
+                  <label className='flex w-full min-w-0 items-center gap-2 text-xs font-medium text-gray-600 sm:w-auto'>
+                    <span>Travel by</span>
                     <select
                       value={travelMode}
                       onChange={(e) =>
                         handleTravelModeChange(e.target.value as TravelMode)
                       }
-                      className='rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs'
+                      className='min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs sm:flex-none'
                     >
                       {TRAVEL_MODE_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
@@ -1174,7 +1193,7 @@ export default function ItineraryActivities({
                     type='button'
                     variant='outline'
                     size='sm'
-                    className='gap-2'
+                    className='w-full gap-2 sm:w-auto'
                     disabled={
                       syncingSchedule ||
                       travelTimesLoading ||
@@ -1186,8 +1205,8 @@ export default function ItineraryActivities({
                     {syncingSchedule
                       ? "Adjusting..."
                       : pendingTravelAdjustments.length > 0
-                        ? `Add travel gaps (${pendingTravelAdjustments.length})`
-                        : "Travel gaps applied"}
+                        ? `Add gaps (${pendingTravelAdjustments.length})`
+                        : "Gaps applied"}
                   </Button>
                 </>
               )}
@@ -1263,7 +1282,7 @@ export default function ItineraryActivities({
           )}
         </div>
 
-        <aside className='rounded-xl border border-gray-200 bg-white p-4 shadow-sm'>
+        <aside className='min-w-0 rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4'>
           <div className='mb-3 flex items-center gap-2'>
             <MapPin className='h-5 w-5 text-blue-600' />
             <h3 className='font-semibold text-gray-900'>Saved trip places</h3>
@@ -1279,7 +1298,7 @@ export default function ItineraryActivities({
                   key={location.id}
                   className='rounded-lg border border-gray-100 bg-gray-50 p-3'
                 >
-                  <p className='text-sm font-medium text-gray-900'>
+                  <p className='break-words text-sm font-medium text-gray-900'>
                     {index + 1}. {location.locationTitle}
                   </p>
                   <a
@@ -1299,32 +1318,32 @@ export default function ItineraryActivities({
 
       <form
         onSubmit={handleSubmit}
-        className='rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4'
+        className='max-w-full min-w-0 space-y-4 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 p-3 sm:p-4'
       >
         <h3 className='font-semibold text-gray-800'>
           Add activity to {selectedDay?.label ?? "selected day"}
         </h3>
-        <div className='grid gap-4 md:grid-cols-2'>
+        <div className='grid min-w-0 gap-4 md:grid-cols-2'>
           <input
             type='text'
             placeholder='Activity title (e.g. Museum visit)'
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
-            className='border border-gray-300 rounded-lg p-3 md:col-span-2'
+            className='box-border w-full min-w-0 rounded-lg border border-gray-300 p-3 md:col-span-2'
           />
           <input
             type='text'
             placeholder='Description (optional)'
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className='border border-gray-300 rounded-lg p-3 md:col-span-2'
+            className='box-border w-full min-w-0 rounded-lg border border-gray-300 p-3 md:col-span-2'
           />
           {sortedLocations.length > 0 && (
             <select
               value={activityLocationId}
               onChange={(e) => handleSelectSavedLocation(e.target.value)}
-              className='border border-gray-300 rounded-lg p-3 md:col-span-2'
+              className='box-border w-full min-w-0 rounded-lg border border-gray-300 p-3 md:col-span-2'
             >
               <option value=''>Use a saved trip place (optional)</option>
               {sortedLocations.map((location) => (
@@ -1334,7 +1353,7 @@ export default function ItineraryActivities({
               ))}
             </select>
           )}
-          <div className='relative md:col-span-2'>
+          <div className='relative min-w-0 md:col-span-2'>
             <input
               type='text'
               placeholder='Activity location or address (optional)'
@@ -1343,7 +1362,7 @@ export default function ItineraryActivities({
               onBlur={() =>
                 window.setTimeout(() => setAddressSuggestions([]), 150)
               }
-              className='w-full border border-gray-300 rounded-lg p-3'
+              className='box-border w-full min-w-0 rounded-lg border border-gray-300 p-3'
             />
             {addressSuggestions.length > 0 && (
               <ul className='absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg'>
@@ -1380,17 +1399,17 @@ export default function ItineraryActivities({
             value={startTime || nextAvailableActivityTime.startTime}
             onChange={(e) => setStartTime(e.target.value)}
             required
-            className='border border-gray-300 rounded-lg p-3'
+            className='box-border w-full min-w-0 max-w-full rounded-lg border border-gray-300 p-3'
           />
           <input
             type='datetime-local'
             value={endTime || nextAvailableActivityTime.endTime}
             onChange={(e) => setEndTime(e.target.value)}
             required
-            className='border border-gray-300 rounded-lg p-3'
+            className='box-border w-full min-w-0 max-w-full rounded-lg border border-gray-300 p-3'
           />
         </div>
-        <Button type='submit' disabled={submitting}>
+        <Button type='submit' disabled={submitting} className='w-full sm:w-auto'>
           {submitting ? "Saving..." : "Add Activity"}
         </Button>
       </form>
@@ -1406,9 +1425,9 @@ export default function ItineraryActivities({
         onSave={handleEditActivitySave}
       />
 
-      <section className='rounded-lg border border-blue-100 bg-blue-50/40 p-4'>
+      <section className='min-w-0 max-w-full overflow-hidden rounded-lg border border-blue-100 bg-blue-50/40 p-3 sm:p-4'>
         <div className='mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
-          <div>
+          <div className='min-w-0'>
             <h3 className='font-semibold text-gray-800'>
               Recommended activities
             </h3>
@@ -1419,7 +1438,7 @@ export default function ItineraryActivities({
               {selectedDay?.shortDate ?? selectedDate}).
             </p>
           </div>
-          <div className='flex flex-col gap-2 sm:items-end'>
+          <div className='flex w-full flex-col gap-2 sm:w-auto sm:items-end'>
             <Button
               type='button'
               size='sm'
@@ -1428,7 +1447,7 @@ export default function ItineraryActivities({
                 !hasLocations || recommendationsLoading || recommendationsRefreshing
               }
               onClick={handleRefreshRecommendations}
-              className='gap-2'
+              className='w-full gap-2 sm:w-auto'
             >
               <RefreshCw
                 className={`h-4 w-4 ${
@@ -1439,7 +1458,7 @@ export default function ItineraryActivities({
                 ? "Finding new ideas..."
                 : "Suggest new recommendations"}
             </Button>
-            <div className='sm:w-64'>
+            <div className='w-full min-w-0 sm:w-64'>
             <label
               htmlFor='recommendation-day'
               className='mb-1 block text-xs font-medium text-gray-600'
@@ -1450,7 +1469,7 @@ export default function ItineraryActivities({
               id='recommendation-day'
               value={selectedDate}
               onChange={(e) => handleAssignDay(e.target.value)}
-              className='w-full rounded-lg border border-gray-300 bg-white p-2 text-sm'
+              className='box-border w-full min-w-0 rounded-lg border border-gray-300 bg-white p-2 text-sm'
             >
               {plannerDays.map((day) => (
                 <option key={day.dateKey} value={day.dateKey}>
@@ -1504,7 +1523,7 @@ export default function ItineraryActivities({
             <p className='rounded-lg bg-white p-3 text-sm text-blue-800'>
               {visibleRecommendations.note}
             </p>
-            <div className='flex gap-2 overflow-x-auto pb-1'>
+            <div className='touch-scroll-x flex gap-2 overflow-x-auto pb-1'>
               {recommendationCategories.map((category) => (
                 <button
                   key={category}
@@ -1573,17 +1592,17 @@ export default function ItineraryActivities({
                         return (
                           <div
                             key={place.id}
-                            className='rounded-lg border border-gray-100 p-3'
+                            className='min-w-0 rounded-lg border border-gray-100 p-3'
                           >
                             <div className='flex flex-wrap items-start justify-between gap-2'>
-                              <div>
-                                <p className='font-semibold text-gray-900'>
+                              <div className='min-w-0 flex-1'>
+                                <p className='break-words font-semibold text-gray-900'>
                                   {place.name}
                                 </p>
-                                <p className='text-sm text-gray-500'>
+                                <p className='break-words text-sm text-gray-500'>
                                   {place.address || "No address available"}
                                 </p>
-                                <p className='mt-2 text-sm text-gray-600'>
+                                <p className='mt-2 break-words text-sm text-gray-600'>
                                   {place.about}
                                 </p>
                               </div>
@@ -1620,7 +1639,7 @@ export default function ItineraryActivities({
                                 View on Maps
                               </a>
                             </div>
-                            <div className='mt-3 grid gap-2 sm:grid-cols-2'>
+                            <div className='mt-3 grid min-w-0 gap-2 sm:grid-cols-2'>
                               <input
                                 type='datetime-local'
                                 value={time.startTime}
@@ -1631,7 +1650,7 @@ export default function ItineraryActivities({
                                     e.target.value,
                                   )
                                 }
-                                className='rounded-lg border border-gray-300 p-2 text-sm'
+                                className='box-border w-full min-w-0 max-w-full rounded-lg border border-gray-300 p-2 text-sm'
                               />
                               <input
                                 type='datetime-local'
@@ -1643,7 +1662,7 @@ export default function ItineraryActivities({
                                     e.target.value,
                                   )
                                 }
-                                className='rounded-lg border border-gray-300 p-2 text-sm'
+                                className='box-border w-full min-w-0 max-w-full rounded-lg border border-gray-300 p-2 text-sm'
                               />
                             </div>
                             {scheduleMeta.scheduleNote && (
@@ -1667,7 +1686,7 @@ export default function ItineraryActivities({
                             <Button
                               type='button'
                               size='sm'
-                              className='mt-3'
+                              className='mt-3 w-full sm:w-auto'
                               disabled={submitting}
                               onClick={() =>
                                 handleAddRecommendation(
