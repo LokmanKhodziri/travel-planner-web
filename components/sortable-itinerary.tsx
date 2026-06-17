@@ -17,6 +17,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useState } from "react";
+import { GripVertical, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "./ui/button";
 
@@ -29,48 +30,99 @@ function SortableItem({
   location,
   tripId,
   onDelete,
+  confirmDeleteId,
+  onRequestDelete,
+  onCancelDelete,
 }: {
   location: LocationItem;
   tripId: string;
   onDelete: (id: string) => void;
+  confirmDeleteId: string | null;
+  onRequestDelete: (id: string) => void;
+  onCancelDelete: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition } =
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
       id: location.id,
     });
   const style = { transform: CSS.Transform.toString(transform), transition };
+  const [deleting, setDeleting] = useState(false);
+  const isConfirming = confirmDeleteId === location.id;
 
-  const handleDelete = async () => {
-    const confirmed = window.confirm(
-      `Delete "${location.locationTitle}" from this trip? This action cannot be undone.`,
-    );
-    if (!confirmed) return;
-
+  async function handleConfirmDelete() {
+    setDeleting(true);
     try {
       await api.deleteLocation(location.id, tripId);
       onDelete(location.id);
+      onCancelDelete();
     } catch (err) {
       console.error(err);
+    } finally {
+      setDeleting(false);
     }
-  };
+  }
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
-      className='p-4 bg-white rounded-lg shadow flex justify-between items-center'
+      className={`flex items-start gap-3 rounded-lg bg-white p-3 shadow sm:items-center sm:p-4 ${
+        isDragging ? "opacity-70" : ""
+      } ${isConfirming ? "ring-2 ring-red-200" : ""}`}
     >
-      <h3 className='text-xl font-semibold'>{location.locationTitle}</h3>
-      <Button
-        variant='destructive'
-        size='sm'
-        onClick={handleDelete}
-        className='ml-4'
+      <button
+        type='button'
+        className='mt-1 shrink-0 rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 sm:mt-0'
+        aria-label={`Drag ${location.locationTitle}`}
+        {...attributes}
+        {...listeners}
       >
-        Delete
-      </Button>
+        <GripVertical className='h-5 w-5' />
+      </button>
+
+      <h3 className='min-w-0 flex-1 break-words text-base font-semibold leading-snug sm:text-xl'>
+        {location.locationTitle}
+      </h3>
+
+      {isConfirming ? (
+        <div className='flex shrink-0 flex-col gap-2 sm:flex-row'>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            disabled={deleting}
+            onClick={onCancelDelete}
+            className='min-w-[4.5rem]'
+          >
+            Cancel
+          </Button>
+          <Button
+            type='button'
+            variant='destructive'
+            size='sm'
+            disabled={deleting}
+            onClick={() => void handleConfirmDelete()}
+            className='min-w-[4.5rem]'
+          >
+            {deleting ? "..." : "Remove"}
+          </Button>
+        </div>
+      ) : (
+        <Button
+          type='button'
+          variant='destructive'
+          size='sm'
+          onClick={(e) => {
+            e.stopPropagation();
+            onRequestDelete(location.id);
+          }}
+          className='shrink-0'
+          aria-label={`Delete ${location.locationTitle}`}
+        >
+          <Trash2 className='h-4 w-4 sm:mr-1' />
+          <span className='hidden sm:inline'>Delete</span>
+        </Button>
+      )}
     </div>
   );
 }
@@ -83,10 +135,18 @@ export default function SortableItinerary({
   locations: LocationItem[];
 }) {
   const [items, setItems] = useState(locations);
-  const sensors = useSensors(useSensor(PointerSensor));
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+  );
 
   useEffect(() => {
     setItems(locations);
+    setConfirmDeleteId((current) =>
+      current && locations.some((loc) => loc.id === current) ? current : null,
+    );
   }, [locations]);
 
   const handleDelete = (deletedId: string) => {
@@ -122,6 +182,9 @@ export default function SortableItinerary({
               location={location}
               tripId={tripId}
               onDelete={handleDelete}
+              confirmDeleteId={confirmDeleteId}
+              onRequestDelete={setConfirmDeleteId}
+              onCancelDelete={() => setConfirmDeleteId(null)}
             />
           ))}
         </div>
