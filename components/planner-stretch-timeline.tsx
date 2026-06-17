@@ -13,20 +13,13 @@ import { formatTravelEstimateLabel } from "@/lib/travel-modes";
 import { activityPrimaryDateKey, clipActivityToDay } from "@/lib/planner-dates";
 import ActivityNearbyMosques from "./activity-nearby-mosques";
 import {
-  DndContext,
-  closestCenter,
-  type DragEndEvent,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import {
-  arrayMove,
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import TimelineInsertDropZone from "./timeline-insert-drop-zone";
+import { timelineInsertAfterId, timelineInsertBeforeId, TIMELINE_INSERT_END } from "@/lib/planner-drag";
 
 const PRAYER_ORDER = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"] as const;
 const GAP_COMPRESS_THRESHOLD_MIN = 60;
@@ -92,6 +85,7 @@ interface PlannerStretchTimelineProps {
   onDeleteActivity: (activityId: string, activityTitle: string) => void;
   onEditActivity: (activity: ApiActivity) => void;
   onReorderActivities: (orderedActivityIds: string[]) => void;
+  showInsertDropZones?: boolean;
 }
 
 function parsePrayerDateTime(dateKey: string, time: string) {
@@ -626,12 +620,8 @@ export default function PlannerStretchTimeline({
   onDeleteActivity,
   onEditActivity,
   onReorderActivities,
+  showInsertDropZones = false,
 }: PlannerStretchTimelineProps) {
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    }),
-  );
   const view = buildStretchTimelineView(
     dateKey,
     activities,
@@ -655,17 +645,6 @@ export default function PlannerStretchTimeline({
     .filter((item): item is ActivityItem => item.type === "activity")
     .map((item) => item.block.activity.id);
 
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id || reorderingActivities) return;
-
-    const oldIndex = sortableActivityIds.indexOf(String(active.id));
-    const newIndex = sortableActivityIds.indexOf(String(over.id));
-    if (oldIndex < 0 || newIndex < 0) return;
-
-    onReorderActivities(arrayMove(sortableActivityIds, oldIndex, newIndex));
-  }
-
   return (
     <div className='max-h-[min(72vh,720px)] overflow-x-hidden overflow-y-auto rounded-xl border border-gray-200 bg-white'>
       <div
@@ -688,6 +667,9 @@ export default function PlannerStretchTimeline({
 
         <p className='border-b border-gray-100 bg-gray-50/60 px-3 py-2 text-[11px] text-gray-500'>
           Drag the handle to reorder activities.
+          {showInsertDropZones
+            ? " Drop a saved place into a blue slot to schedule it."
+            : null}
           {showPrayerColumn
             ? " Prayer times appear on the right on larger screens."
             : showPrayerTimes
@@ -695,17 +677,19 @@ export default function PlannerStretchTimeline({
               : ""}
         </p>
 
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
+        <SortableContext
+          items={sortableActivityIds}
+          strategy={verticalListSortingStrategy}
         >
-          <SortableContext
-            items={sortableActivityIds}
-            strategy={verticalListSortingStrategy}
-          >
-            <div className='divide-y divide-gray-100'>
-              {view.items.map((item, index) => {
+          <div className='divide-y divide-gray-100'>
+            {showInsertDropZones && sortableActivityIds.length > 0 && (
+              <TimelineInsertDropZone
+                id={timelineInsertBeforeId(sortableActivityIds[0])}
+                visible
+                label='Drop before first activity'
+              />
+            )}
+            {view.items.map((item, index) => {
                 if (item.type === "free") {
                   return (
                     <div
@@ -733,30 +717,43 @@ export default function PlannerStretchTimeline({
                 }
 
                 return (
-                  <SortableTimelineActivityRow
-                    key={item.block.activity.id}
-                    item={item}
-                    itemIndex={index}
-                    items={view.items}
-                    gridColumns={gridColumns}
-                    showPrayerTimes={showPrayerTimes}
-                    compact={compact}
-                    prayers={prayersByRow.get(index) ?? []}
-                    plannerDays={plannerDays}
-                    tripId={tripId}
-                    travelTimesLoading={travelTimesLoading}
-                    travelTimesError={travelTimesError}
-                    movingActivityId={movingActivityId}
-                    reorderingActivities={reorderingActivities}
-                    onMoveActivity={onMoveActivity}
-                    onDeleteActivity={onDeleteActivity}
-                    onEditActivity={onEditActivity}
-                  />
+                  <div key={item.block.activity.id}>
+                    <SortableTimelineActivityRow
+                      item={item}
+                      itemIndex={index}
+                      items={view.items}
+                      gridColumns={gridColumns}
+                      showPrayerTimes={showPrayerTimes}
+                      compact={compact}
+                      prayers={prayersByRow.get(index) ?? []}
+                      plannerDays={plannerDays}
+                      tripId={tripId}
+                      travelTimesLoading={travelTimesLoading}
+                      travelTimesError={travelTimesError}
+                      movingActivityId={movingActivityId}
+                      reorderingActivities={reorderingActivities}
+                      onMoveActivity={onMoveActivity}
+                      onDeleteActivity={onDeleteActivity}
+                      onEditActivity={onEditActivity}
+                    />
+                    {showInsertDropZones && (
+                      <TimelineInsertDropZone
+                        id={timelineInsertAfterId(item.block.activity.id)}
+                        visible
+                      />
+                    )}
+                  </div>
                 );
               })}
-            </div>
-          </SortableContext>
-        </DndContext>
+            {showInsertDropZones && (
+              <TimelineInsertDropZone
+                id={TIMELINE_INSERT_END}
+                visible
+                label='Drop at end of day'
+              />
+            )}
+          </div>
+        </SortableContext>
       </div>
 
       <div className='flex flex-wrap gap-4 border-t border-gray-100 bg-gray-50 px-4 py-2 text-[11px] text-gray-500'>

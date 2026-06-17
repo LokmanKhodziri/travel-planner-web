@@ -1,6 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import { arrayMove } from "@dnd-kit/sortable";
 import { api } from "@/lib/api";
 import type {
   ActivityRecommendationsResponse,
@@ -13,9 +24,10 @@ import type {
   TravelMode,
 } from "@/types/api";
 import { formatDateTime } from "@/lib/utils";
-import { computeTravelAdjustedSchedule, computeScheduleForOrderedActivities } from "@/lib/planner-schedule";
+import { computeTravelAdjustedSchedule, computeScheduleForOrderedActivities, getTravelBufferAfterActivity } from "@/lib/planner-schedule";
 import {
   activityPrimaryDateKey,
+  clipActivityToDay,
   getActivitiesOverlappingDate,
   plannerDateKey,
 } from "@/lib/planner-dates";
@@ -34,6 +46,14 @@ import {
 import { Button } from "./ui/button";
 import PlannerStretchTimeline from "./planner-stretch-timeline";
 import ActivityEditDialog from "./activity-edit-dialog";
+import SavedPlaceDraggable from "./saved-place-draggable";
+import TimelineInsertDropZone from "./timeline-insert-drop-zone";
+import {
+  isSavedPlaceDragId,
+  parseSavedPlaceDragId,
+  parseTimelineInsertTarget,
+  TIMELINE_INSERT_EMPTY,
+} from "@/lib/planner-drag";
 import { CalendarDays, MapPin, RefreshCw, Route, Sparkles } from "lucide-react";
 
 interface ItineraryActivitiesProps {
@@ -186,6 +206,25 @@ function activityDurationMinutes(activity: ApiActivity) {
   );
 }
 
+function locationsAreNearby(
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number },
+) {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const earthRadiusM = 6371000;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLng = toRad(b.longitude - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+  const haversine =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return (
+    earthRadiusM * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine)) <
+    150
+  );
+}
+
 export default function ItineraryActivities({
   tripId,
   startDate,
@@ -248,7 +287,17 @@ export default function ItineraryActivities({
   const [showPrayerTimes, setShowPrayerTimes] = useState(true);
   const [travelMode, setTravelMode] = useState<TravelMode>("driving");
   const [error, setError] = useState<string | null>(null);
+  const [draggingSavedPlaceId, setDraggingSavedPlaceId] = useState<string | null>(
+    null,
+  );
+  const [addingSavedPlaceId, setAddingSavedPlaceId] = useState<string | null>(null);
   const addressDebounceRef = useRef<number | null>(null);
+
+  const plannerSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+  );
 
   const loadActivities = () => {
     setLoading(true);
@@ -816,6 +865,209 @@ export default function ItineraryActivities({
     }
   }
 
+  function sortedDayActivities(
+    dateKey = selectedDate,
+    activityList: ApiActivity[] = activities,
+  ) {
+    return [...getActivitiesForDate(dateKey, activityList)].sort((a, b) =>
+      a.startTime.localeCompare(b.startTime),
+    );
+  }
+
+  function isLocationOnSelectedDay(
+    location: Pick<
+      ApiLocation,
+      "id" | "locationTitle" | "latitude" | "longitude"
+    >,
+  ) {
+    return sortedDayActivities().some((activity) => {
+      if (activity.latitude != null && activity.longitude != null) {
+        return locationsAreNearby(
+          { latitude: activity.latitude, longitude: activity.longitude },
+          location,
+        );
+      }
+      return (
+        activity.title.trim().toLowerCase() ===
+        location.locationTitle.trim().toLowerCase()
+      );
+    });
+  }
+
+  function findSlotAfterActivity(activityId: string) {
+    const dayActivities = sortedDayActivities();
+    const index = dayActivities.findIndex((activity) => activity.id === activityId);
+    if (index === -1) return findNextAvailableSlot();
+
+    const activity = dayActivities[index];
+    const activityEnd = clipActivityToDay(activity, selectedDate).endAt;
+    const next = dayActivities[index + 1];
+    const bufferMinutes = next
+      ? getTravelBufferAfterActivity(activity, next.id, travelTimeSegments) || 15
+      : 15;
+
+    let start = addMinutes(activityEnd, bufferMinutes);
+    let end = addMinutes(start, DEFAULT_ACTIVITY_DURATION_MINUTES);
+
+    if (next) {
+      const nextStart = clipActivityToDay(next, selectedDate).startAt;
+      const travelToNext =
+        getTravelBufferAfterActivity(activity, next.id, travelTimeSegments) || 15;
+      const latestEnd = addMinutes(nextStart, -travelToNext);
+      if (end > latestEnd) {
+        end = latestEnd;
+        start = addMinutes(end, -DEFAULT_ACTIVITY_DURATION_MINUTES);
+      }
+      if (start < activityEnd || end <= start) {
+        return findNextAvailableSlot();
+      }
+    }
+
+    return {
+      startTime: toDateTimeLocalValue(start),
+      endTime: toDateTimeLocalValue(end),
+    };
+  }
+
+  function findSlotBeforeActivity(activityId: string) {
+    const dayActivities = sortedDayActivities();
+    const index = dayActivities.findIndex((activity) => activity.id === activityId);
+    if (index === -1) return findNextAvailableSlot();
+
+    const target = dayActivities[index];
+    const targetStart = clipActivityToDay(target, selectedDate).startAt;
+
+    if (index === 0) {
+      const cursor = buildDateTime(selectedDate, PLANNER_DAY_START_HOUR);
+      return {
+        startTime: toDateTimeLocalValue(cursor),
+        endTime: toDateTimeLocalValue(
+          addMinutes(cursor, DEFAULT_ACTIVITY_DURATION_MINUTES),
+        ),
+      };
+    }
+
+    const previous = dayActivities[index - 1];
+    const previousEnd = clipActivityToDay(previous, selectedDate).endAt;
+    const travelFromPrevious =
+      getTravelBufferAfterActivity(previous, target.id, travelTimeSegments) || 15;
+
+    let end = addMinutes(targetStart, -travelFromPrevious);
+    let start = addMinutes(end, -DEFAULT_ACTIVITY_DURATION_MINUTES);
+
+    if (start < previousEnd) {
+      const bufferAfterPrevious =
+        getTravelBufferAfterActivity(previous, target.id, travelTimeSegments) || 15;
+      start = addMinutes(previousEnd, bufferAfterPrevious);
+      end = addMinutes(start, DEFAULT_ACTIVITY_DURATION_MINUTES);
+      if (end > targetStart) {
+        return findNextAvailableSlot();
+      }
+    }
+
+    return {
+      startTime: toDateTimeLocalValue(start),
+      endTime: toDateTimeLocalValue(end),
+    };
+  }
+
+  async function handleAddSavedPlaceToTimeline(
+    location: Pick<
+      ApiLocation,
+      "id" | "locationTitle" | "latitude" | "longitude"
+    >,
+    target: NonNullable<ReturnType<typeof parseTimelineInsertTarget>>,
+  ) {
+    if (isLocationOnSelectedDay(location)) {
+      setError(`"${location.locationTitle}" is already scheduled on this day.`);
+      return;
+    }
+
+    setAddingSavedPlaceId(location.id);
+    setError(null);
+    setScheduleNotice(null);
+
+    try {
+      let slot: { startTime: string; endTime: string };
+      if (target.type === "before") {
+        slot = findSlotBeforeActivity(target.activityId);
+      } else if (target.type === "after") {
+        slot = findSlotAfterActivity(target.activityId);
+      } else {
+        slot = findNextAvailableSlot();
+      }
+
+      const start = new Date(slot.startTime);
+      const end = new Date(slot.endTime);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+        setError("Could not find a valid time slot. Try another position on the timeline.");
+        return;
+      }
+
+      await createActivity({
+        title: location.locationTitle,
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+        latitude: location.latitude,
+        longitude: location.longitude,
+      });
+      setScheduleNotice(
+        `Added "${location.locationTitle}" to ${selectedDay?.label ?? "this day"}.`,
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to add saved place to timeline",
+      );
+    } finally {
+      setAddingSavedPlaceId(null);
+    }
+  }
+
+  function handlePlannerDragStart(event: DragStartEvent) {
+    const activeId = String(event.active.id);
+    if (isSavedPlaceDragId(activeId)) {
+      setDraggingSavedPlaceId(parseSavedPlaceDragId(activeId));
+    }
+  }
+
+  async function handlePlannerDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    const activeId = String(active.id);
+    setDraggingSavedPlaceId(null);
+
+    if (!over) return;
+
+    const overId = String(over.id);
+
+    if (isSavedPlaceDragId(activeId)) {
+      const locationId = parseSavedPlaceDragId(activeId);
+      if (!locationId) return;
+
+      const location = [...locations]
+        .sort((a, b) => a.order - b.order)
+        .find((item) => item.id === locationId);
+      if (!location) return;
+
+      const insertTarget = parseTimelineInsertTarget(overId);
+      if (!insertTarget) return;
+
+      await handleAddSavedPlaceToTimeline(location, insertTarget);
+      return;
+    }
+
+    if (parseTimelineInsertTarget(overId)) return;
+
+    const dayActivityIds = sortedDayActivities().map((activity) => activity.id);
+    if (!dayActivityIds.includes(activeId) || !dayActivityIds.includes(overId)) {
+      return;
+    }
+    if (activeId === overId) return;
+
+    const oldIndex = dayActivityIds.indexOf(activeId);
+    const newIndex = dayActivityIds.indexOf(overId);
+    await handleReorderActivities(arrayMove(dayActivityIds, oldIndex, newIndex));
+  }
+
   async function handleEditActivitySave(values: {
     title: string;
     description: string;
@@ -1153,6 +1405,12 @@ export default function ItineraryActivities({
         </div>
       </section>
 
+      <DndContext
+        sensors={plannerSensors}
+        collisionDetection={closestCenter}
+        onDragStart={handlePlannerDragStart}
+        onDragEnd={(event) => void handlePlannerDragEnd(event)}
+      >
       <section className='grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]'>
         <div className='min-w-0 rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4'>
           <div className='mb-4 flex flex-col gap-3'>
@@ -1240,11 +1498,21 @@ export default function ItineraryActivities({
             </p>
           ) : !hasTimelineContent ? (
             <div className='rounded-lg border border-dashed border-gray-300 bg-gray-50 p-6 text-center'>
+              {sortedLocations.length > 0 && (
+                <div className='mb-4 text-left'>
+                  <TimelineInsertDropZone
+                    id={TIMELINE_INSERT_EMPTY}
+                    visible={draggingSavedPlaceId != null}
+                    label='Drop a saved place here to start this day'
+                  />
+                </div>
+              )}
               <p className='font-medium text-gray-700'>
                 No activities planned for this day yet.
               </p>
               <p className='mt-1 text-sm text-gray-500'>
-                Add your own activity below or choose one from recommendations.
+                Drag a saved place from the sidebar, tap + to add one, or use the
+                form below.
               </p>
               {!hasLocations && (
                 <p className='mt-2 text-sm text-amber-700'>
@@ -1269,6 +1537,7 @@ export default function ItineraryActivities({
               onDeleteActivity={handleDelete}
               onEditActivity={setEditingActivity}
               onReorderActivities={handleReorderActivities}
+              showInsertDropZones={draggingSavedPlaceId != null}
             />
           )}
 
@@ -1305,31 +1574,55 @@ export default function ItineraryActivities({
               Add locations first to make recommendations stronger.
             </p>
           ) : (
-            <div className='min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5'>
-              <ul className='space-y-2'>
-                {sortedLocations.map((location, index) => (
-                  <li
-                    key={location.id}
-                    className='rounded-lg border border-gray-100 bg-gray-50 p-3'
-                  >
-                    <p className='break-words text-sm font-medium text-gray-900'>
-                      {index + 1}. {location.locationTitle}
-                    </p>
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`}
-                      target='_blank'
-                      rel='noreferrer'
-                      className='mt-1 inline-block text-xs text-blue-600 hover:underline'
-                    >
-                      View on Maps
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <>
+              <p className='mb-2 shrink-0 text-xs text-gray-500'>
+                Drag to a blue slot on the timeline, or tap + to add at the end
+                of this day.
+              </p>
+              <div className='min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5'>
+                <ul className='space-y-2'>
+                  {sortedLocations.map((location, index) => (
+                    <SavedPlaceDraggable
+                      key={location.id}
+                      locationId={location.id}
+                      title={location.locationTitle}
+                      latitude={location.latitude}
+                      longitude={location.longitude}
+                      index={index}
+                      adding={addingSavedPlaceId === location.id}
+                      onTimeline={isLocationOnSelectedDay(location)}
+                      onQuickAdd={() =>
+                        void handleAddSavedPlaceToTimeline(location, {
+                          type: "end",
+                        })
+                      }
+                    />
+                  ))}
+                </ul>
+              </div>
+            </>
           )}
         </aside>
       </section>
+      <DragOverlay dropAnimation={null}>
+        {draggingSavedPlaceId ? (
+          (() => {
+            const dragged = sortedLocations.find(
+              (location) => location.id === draggingSavedPlaceId,
+            );
+            if (!dragged) return null;
+            return (
+              <div className='w-64 rounded-lg border border-blue-300 bg-white p-3 shadow-lg'>
+                <p className='text-sm font-medium text-gray-900'>
+                  {dragged.locationTitle}
+                </p>
+                <p className='mt-1 text-xs text-blue-600'>Drop on timeline</p>
+              </div>
+            );
+          })()
+        ) : null}
+      </DragOverlay>
+      </DndContext>
 
       <form
         onSubmit={handleSubmit}
