@@ -70,7 +70,7 @@ export default async function TripsPage() {
   }
 
   return (
-    <div className='container mx-auto space-y-8 px-4 py-10'>
+    <div className='page-shell space-y-8 py-10'>
       <header className='flex flex-col justify-between gap-4 sm:flex-row sm:items-center'>
         <div>
           <h1 className='text-3xl font-bold tracking-tight sm:text-4xl'>

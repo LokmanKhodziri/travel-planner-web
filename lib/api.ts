@@ -10,6 +10,7 @@ import type {
   ActivityRecommendationsResponse,
   ActivityTravelTimesResponse,
   ApiExpense,
+  ApiTripBudget,
   ExpenseCategory,
   TravelMode,
 } from "@/types/api";
@@ -238,6 +239,24 @@ export const api = {
       `/api/trips/${tripId}/expenses/${expenseId}`,
       { method: "DELETE" },
     ),
+  getTripBudget: (tripId: string) =>
+    fetchApi<ApiTripBudget | null>(`/api/trips/${tripId}/budget`),
+  saveTripBudget: (
+    tripId: string,
+    body: {
+      currency: string;
+      totalAmount?: number | null;
+      categoryBudgets?: Partial<Record<ExpenseCategory, number>> | null;
+    },
+  ) =>
+    fetchApi<ApiTripBudget>(`/api/trips/${tripId}/budget`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  clearTripBudget: (tripId: string) =>
+    fetchApi<{ success: boolean }>(`/api/trips/${tripId}/budget`, {
+      method: "DELETE",
+    }),
 };
 
 export { JWT_COOKIE, getToken };

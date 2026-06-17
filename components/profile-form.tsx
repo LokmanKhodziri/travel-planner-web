@@ -53,7 +53,7 @@ export default function ProfileForm({ user }: ProfileFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className='space-y-4'>
+    <form onSubmit={handleSubmit} className='form-well space-y-4'>
       <label className='block space-y-1 text-sm'>
         <span className='font-medium text-gray-700'>Display name</span>
         <input
@@ -74,6 +74,7 @@ export default function ProfileForm({ user }: ProfileFormProps) {
           className='w-full rounded-lg border border-gray-200 bg-gray-50 p-3 text-gray-600'
         />
       </label>
+      <div className='grid gap-4 sm:grid-cols-2'>
       <label className='block space-y-1 text-sm'>
         <span className='font-medium text-gray-700'>Home city</span>
         <input
@@ -102,6 +103,7 @@ export default function ProfileForm({ user }: ProfileFormProps) {
           ))}
         </select>
       </label>
+      </div>
       <p className='text-xs text-gray-500'>
         Home city and timezone help personalize prayer times and recommendations
         when you are planning from home.
