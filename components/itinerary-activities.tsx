@@ -1422,10 +1422,10 @@ export default function ItineraryActivities({
                 {selectedDay?.shortDate ?? selectedDate}
                 {prayerTimes ? ` · ${prayerTimes.timezone}` : ""}
               </p>
-              <p className='mt-1 hidden text-xs text-gray-500 sm:block'>
+              <p className='mt-1 hidden text-xs text-gray-500 lg:block'>
                 Activities stack in order with travel info on each card. Nearby
-                stops automatically use walking. Prayer times appear on the
-                right on larger screens.
+                stops automatically use walking. Prayer times show below each
+                activity on tablets, or on the right on wide desktop layouts.
               </p>
             </div>
             <div className='flex min-w-0 flex-wrap items-center gap-2 sm:gap-3'>

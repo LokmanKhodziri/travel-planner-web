@@ -8,6 +8,7 @@ import type {
 import { Button } from "./ui/button";
 import { Bus, Car, Clock, Footprints, GripVertical, MapPin, Pencil } from "lucide-react";
 import type { TravelMode } from "@/types/api";
+import { useEffect, useRef, useState } from "react";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { formatTravelEstimateLabel } from "@/lib/travel-modes";
 import { activityPrimaryDateKey, clipActivityToDay } from "@/lib/planner-dates";
@@ -375,6 +376,7 @@ interface SortableTimelineActivityRowProps {
   gridColumns: string;
   showPrayerTimes: boolean;
   compact: boolean;
+  prayerBelowCard: boolean;
   prayers: PrayerMarker[];
   plannerDays: PlannerDay[];
   tripId: string;
@@ -394,6 +396,7 @@ function SortableTimelineActivityRow({
   gridColumns,
   showPrayerTimes,
   compact,
+  prayerBelowCard,
   prayers,
   plannerDays,
   tripId,
@@ -566,7 +569,7 @@ function SortableTimelineActivityRow({
             </div>
           )}
 
-          {compact && showPrayerTimes && (
+          {prayerBelowCard && (
             <div className='space-y-2 border-t border-emerald-100 bg-emerald-50/40 px-3 py-2'>
               <p className='text-[10px] font-semibold uppercase tracking-wide text-emerald-800'>
                 Salah & masjid
@@ -586,7 +589,7 @@ function SortableTimelineActivityRow({
         </div>
       </article>
 
-      {showPrayerTimes && !compact && (
+      {showPrayerTimes && !prayerBelowCard && (
         <div className='border-l border-emerald-100/80 pl-2 pt-1'>
           <PrayerCell prayers={prayers} />
           {block.activity.latitude != null &&
@@ -622,6 +625,22 @@ export default function PlannerStretchTimeline({
   onReorderActivities,
   showInsertDropZones = false,
 }: PlannerStretchTimelineProps) {
+  const compact = useMediaQuery("(max-width: 1023px)");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [narrowTimeline, setNarrowTimeline] = useState(true);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+
+    const observer = new ResizeObserver(([entry]) => {
+      // Side prayer column needs ~700px; below-card layout fits narrower columns (e.g. iPad Pro + sidebar).
+      setNarrowTimeline(entry.contentRect.width < 700);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
   const view = buildStretchTimelineView(
     dateKey,
     activities,
@@ -632,8 +651,8 @@ export default function PlannerStretchTimeline({
 
   if (view.items.length === 0 && view.prayers.length === 0) return null;
 
-  const compact = useMediaQuery("(max-width: 1023px)");
-  const showPrayerColumn = showPrayerTimes && !compact;
+  const prayerBelowCard = showPrayerTimes && (compact || narrowTimeline);
+  const showPrayerColumn = showPrayerTimes && !prayerBelowCard;
   const gridColumns = showPrayerColumn
     ? "48px minmax(0, 1fr) 112px"
     : "40px minmax(0, 1fr)";
@@ -646,12 +665,11 @@ export default function PlannerStretchTimeline({
     .map((item) => item.block.activity.id);
 
   return (
-    <div className='max-h-[min(72vh,720px)] overflow-x-hidden overflow-y-auto rounded-xl border border-gray-200 bg-white 2xl:max-h-[min(78vh,800px)]'>
-      <div
-        className={
-          compact ? "min-w-0" : showPrayerTimes ? "min-w-[680px]" : "min-w-[640px]"
-        }
-      >
+    <div
+      ref={containerRef}
+      className='max-h-[min(72vh,720px)] overflow-x-hidden overflow-y-auto rounded-xl border border-gray-200 bg-white 2xl:max-h-[min(78vh,800px)]'
+    >
+      <div className='min-w-0'>
         <div
           className='grid border-b border-gray-100 bg-gray-50/80 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500'
           style={{ gridTemplateColumns: gridColumns }}
@@ -671,9 +689,9 @@ export default function PlannerStretchTimeline({
             ? " Drop a saved place into a blue slot to schedule it."
             : null}
           {showPrayerColumn
-            ? " Prayer times appear on the right on larger screens."
+            ? " Prayer times appear on the right when there is enough space."
             : showPrayerTimes
-              ? " Prayer times appear below each activity on smaller screens."
+              ? " Prayer times appear below each activity on phones and tablets."
               : ""}
         </p>
 
@@ -725,6 +743,7 @@ export default function PlannerStretchTimeline({
                       gridColumns={gridColumns}
                       showPrayerTimes={showPrayerTimes}
                       compact={compact}
+                      prayerBelowCard={prayerBelowCard}
                       prayers={prayersByRow.get(index) ?? []}
                       plannerDays={plannerDays}
                       tripId={tripId}

@@ -233,7 +233,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
         </div>
       </div>
 
-      <div className='rounded-lg bg-white p-4 shadow sm:p-6'>
+      <div className='min-w-0 overflow-x-hidden rounded-lg bg-white p-3 shadow sm:p-4 md:p-6'>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <div className='-mx-1 mb-4 touch-scroll-x overflow-x-auto px-1 pb-1 no-scrollbar sm:mb-6 xl:overflow-visible xl:touch-auto'>
             <TabsList className='inline-flex h-auto min-w-max gap-1 p-1 xl:flex xl:min-w-0 xl:flex-wrap'>
