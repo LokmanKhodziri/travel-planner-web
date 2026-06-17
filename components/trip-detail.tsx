@@ -94,6 +94,23 @@ function timeOnly(value: string) {
   });
 }
 
+function locationsAreNearby(
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number },
+) {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const earthRadiusM = 6371000;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLng = toRad(b.longitude - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+  const haversine =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  const distanceM = earthRadiusM * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+  return distanceM < 150;
+}
+
 export default function TripDetailClient({ trip }: TripDetailClientProps) {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState("overview");
@@ -118,6 +135,16 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
   const handleLocationAdded = (location: ApiLocation) => {
     setTripLocations((prev) => {
       if (prev.some((item) => item.id === location.id)) return prev;
+      if (
+        prev.some((item) =>
+          locationsAreNearby(item, {
+            latitude: location.latitude,
+            longitude: location.longitude,
+          }),
+        )
+      ) {
+        return prev;
+      }
       return [
         ...prev,
         {
@@ -132,69 +159,26 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
   useEffect(() => {
     let cancelled = false;
 
-    const applyLocations = (locations: ApiLocation[]) => {
-      if (cancelled) return;
-      setTripLocations(
-        locations.map((location) => ({
-          ...location,
-          createAt: new Date(location.createAt),
-          updateAt: location.updateAt ? new Date(location.updateAt) : null,
-        })),
-      );
-    };
-
-    const fallbackSyncFromActivities = async () => {
-      const activities = trip.activities ?? [];
-      if (activities.length === 0) return;
-
-      let merged = [...trip.locations];
-      for (const activity of activities) {
-        const hasCoords =
-          activity.latitude != null && activity.longitude != null;
-        const hasAddress = Boolean(activity.address?.trim());
-        if (!hasCoords && !hasAddress) continue;
-
-        try {
-          const location = await api.addLocation(
-            trip.id,
-            activity.address?.trim() || activity.title,
-            {
-              locationTitle: activity.title,
-              latitude: hasCoords ? activity.latitude! : undefined,
-              longitude: hasCoords ? activity.longitude! : undefined,
-            },
-          );
-          if (!merged.some((item) => item.id === location.id)) {
-            merged = [
-              ...merged,
-              {
-                ...location,
-                createAt: new Date(location.createAt),
-                updateAt: location.updateAt ? new Date(location.updateAt) : null,
-              },
-            ];
-          }
-        } catch {
-          // Skip activities that cannot be synced.
-        }
-      }
-
-      if (cancelled) return;
-      setTripLocations(merged.sort((a, b) => a.order - b.order));
-    };
-
     api
       .syncLocationsFromActivities(trip.id)
-      .then(applyLocations)
-      .catch(async (err) => {
+      .then((locations) => {
+        if (cancelled) return;
+        setTripLocations(
+          locations.map((location) => ({
+            ...location,
+            createAt: new Date(location.createAt),
+            updateAt: location.updateAt ? new Date(location.updateAt) : null,
+          })),
+        );
+      })
+      .catch((err) => {
         console.error("Failed to sync planner places to locations:", err);
-        await fallbackSyncFromActivities();
       });
 
     return () => {
       cancelled = true;
     };
-  }, [trip.id, trip.activities, trip.locations]);
+  }, [trip.id]);
 
   const hasLocations = tripLocations.length > 0;
   const defaultDate = trip.startDate.toISOString().slice(0, 10);
@@ -212,7 +196,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
   ).length;
 
   return (
-    <div className='container mx-auto px-4 py-8 space-y-8'>
+    <div className='page-shell-wide min-w-0 space-y-6 py-6 sm:space-y-8 sm:py-8'>
       {trip.imageUrl && (
         <div className='w-full h-72 md:h-96 overflow-hidden rounded-xl shadow-lg relative'>
           <Image
@@ -249,59 +233,64 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
         </div>
       </div>
 
-      <div className='bg-white p-6 shadow rounded-lg'>
+      <div className='min-w-0 overflow-x-hidden rounded-lg bg-white p-3 shadow sm:p-4 md:p-6'>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className='mb-6 flex w-full flex-row flex-nowrap gap-2 overflow-x-auto overflow-y-hidden pb-1 pr-2 no-scrollbar'>
+          <div className='-mx-1 mb-4 touch-scroll-x overflow-x-auto px-1 pb-1 no-scrollbar sm:mb-6 xl:overflow-visible xl:touch-auto'>
+            <TabsList className='inline-flex h-auto min-w-max gap-1 p-1 xl:flex xl:min-w-0 xl:flex-wrap'>
             <TabsTrigger
               value='overview'
-              className='text-sm font-semibold whitespace-nowrap'
+              className='shrink-0 px-3 py-2 text-sm font-semibold whitespace-nowrap'
             >
               Overview
             </TabsTrigger>
             <TabsTrigger
               value='itinerary'
-              className='text-sm font-semibold whitespace-nowrap'
+              className='shrink-0 px-3 py-2 text-sm font-semibold whitespace-nowrap'
             >
               Locations
             </TabsTrigger>
             <TabsTrigger
               value='activities'
-              className='text-sm font-semibold whitespace-nowrap'
+              className='shrink-0 px-3 py-2 text-sm font-semibold whitespace-nowrap'
             >
               Planner
             </TabsTrigger>
             <TabsTrigger
               value='expenses'
-              className='text-sm font-semibold whitespace-nowrap'
+              className='shrink-0 px-3 py-2 text-sm font-semibold whitespace-nowrap'
             >
               Expenses
             </TabsTrigger>
             <TabsTrigger
               value='prayer'
-              className='text-sm font-semibold whitespace-nowrap'
+              className='shrink-0 px-3 py-2 text-sm font-semibold whitespace-nowrap'
             >
-              Prayer Times
+              <span className='sm:hidden'>Prayer</span>
+              <span className='hidden sm:inline'>Prayer Times</span>
             </TabsTrigger>
             <TabsTrigger
               value='nearby'
-              className='text-sm font-semibold whitespace-nowrap'
+              className='shrink-0 px-3 py-2 text-sm font-semibold whitespace-nowrap'
             >
               Nearby
             </TabsTrigger>
             <TabsTrigger
               value='map'
-              className='text-sm font-semibold whitespace-nowrap'
+              className='shrink-0 px-3 py-2 text-sm font-semibold whitespace-nowrap'
             >
               Map
             </TabsTrigger>
-          </TabsList>
+            </TabsList>
+          </div>
 
           <TabsContent value='overview'>
             <div>
               <h2 className='text-xl font-semibold mb-4'>Overview</h2>
+              <div className='grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] xl:items-start'>
               <div>
+                <div className='grid gap-4 sm:grid-cols-2'>
                 <div className='flex items-start'>
-                  <Calendar className='h-6 w-6 mr-3 text-gray-500' />
+                  <Calendar className='h-6 w-6 mr-3 text-gray-500 shrink-0' />
                   <div className='text-gray-700'>
                     <p className='font-medium'>Dates</p>
                     <p className='text-sm text-gray-500'>
@@ -311,22 +300,26 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                     </p>
                   </div>
                 </div>
-                <div className='flex items-start mt-4'>
-                  <MapPin className='h-6 w-6 mr-3 text-gray-500' />
-                  <p>
-                    Destinations: {tripLocations.length} location
-                    {tripLocations.length !== 1 ? "s" : ""}
-                  </p>
+                <div className='flex items-start'>
+                  <MapPin className='h-6 w-6 mr-3 text-gray-500 shrink-0' />
+                  <div className='text-gray-700'>
+                    <p className='font-medium'>Destinations</p>
+                    <p className='text-sm text-gray-500'>
+                      {tripLocations.length} location
+                      {tripLocations.length !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                </div>
                 </div>
                 <p className='text-sm text-emerald-700 mt-4'>
                   Muslim-friendly features: prayer times, nearby mosques, and
                   Halal food.
                 </p>
-              </div>
-              <p className='text-gray-500 mt-4 leading-relaxed'>
+              <p className='text-gray-500 mt-4 leading-relaxed max-w-3xl'>
                 {trip.description}
               </p>
-              <div className='mt-6 rounded-xl border border-blue-100 bg-blue-50/40 p-4'>
+              </div>
+              <div className='rounded-xl border border-blue-100 bg-blue-50/40 p-4 xl:p-5'>
                 <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
                   <div>
                     <h3 className='text-lg font-semibold text-gray-900'>
@@ -347,7 +340,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                   </Button>
                 </div>
 
-                <div className='mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3'>
+                <div className='mt-4 grid gap-3 sm:grid-cols-2'>
                   {overviewDays.map((day) => {
                     const dayActivities = activitiesByDate[day.dateKey] ?? [];
                     const firstActivity = dayActivities[0];
@@ -403,6 +396,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                   })}
                 </div>
               </div>
+              </div>
             </div>
           </TabsContent>
           <TabsContent value='itinerary'>
@@ -436,7 +430,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                       </Button>
                     </Link>
                   </div>
-                  <div className='mt-4'>
+                  <div className='content-well mt-4'>
                     <SortableItinerary
                       tripId={trip.id}
                       locations={tripLocations.map((loc) => ({
@@ -480,6 +474,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                 id: activity.id,
                 title: activity.title,
                 startTime: activity.startTime,
+                endTime: activity.endTime,
               }))}
             />
           </TabsContent>
@@ -494,7 +489,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
             <NearbyPlacesPanel tripId={trip.id} hasLocations={hasLocations} />
           </TabsContent>
           <TabsContent value='map'>
-            <div className='h-72 md:h-96 lg:h-130 rounded-lg overflow-hidden'>
+            <div className='h-72 overflow-hidden rounded-lg md:h-96 lg:h-[28rem] 2xl:h-[32rem]'>
               <h2 className='text-xl font-semibold mb-4'>Map</h2>
               <Map
                 itineraries={tripLocations.map((loc, idx) => ({

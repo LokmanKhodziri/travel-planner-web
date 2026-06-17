@@ -43,14 +43,19 @@ export function travelModeLabel(mode: TravelMode) {
 }
 
 export function formatTravelEstimateLabel(estimate: {
-  mode: TravelMode;
-  modeLabel: string;
-  autoWalk: boolean;
+  mode?: TravelMode;
+  modeLabel?: string;
+  autoWalk?: boolean;
   durationText: string;
-  distanceText: string;
+  distanceText?: string;
 }) {
-  const prefix = estimate.autoWalk
-    ? `${estimate.modeLabel} (nearby)`
-    : estimate.modeLabel;
-  return `${prefix} · ${estimate.durationText} · ${estimate.distanceText}`;
+  const modeLabel =
+    estimate.modeLabel ??
+    (estimate.mode ? travelModeLabel(estimate.mode) : null);
+  const prefix =
+    estimate.autoWalk && modeLabel ? `${modeLabel} (nearby)` : modeLabel;
+  const parts = [prefix, estimate.durationText, estimate.distanceText].filter(
+    (part): part is string => Boolean(part),
+  );
+  return parts.length > 0 ? parts.join(" · ") : estimate.durationText;
 }

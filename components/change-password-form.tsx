@@ -42,7 +42,7 @@ export default function ChangePasswordForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className='space-y-4'>
+    <form onSubmit={handleSubmit} className='form-well space-y-4'>
       <label className='block space-y-1 text-sm'>
         <span className='font-medium text-gray-700'>Current password</span>
         <input

@@ -1,6 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import { arrayMove } from "@dnd-kit/sortable";
 import { api } from "@/lib/api";
 import type {
   ActivityRecommendationsResponse,
@@ -13,9 +24,10 @@ import type {
   TravelMode,
 } from "@/types/api";
 import { formatDateTime } from "@/lib/utils";
-import { computeTravelAdjustedSchedule, computeScheduleForOrderedActivities } from "@/lib/planner-schedule";
+import { computeTravelAdjustedSchedule, computeScheduleForOrderedActivities, getTravelBufferAfterActivity } from "@/lib/planner-schedule";
 import {
   activityPrimaryDateKey,
+  clipActivityToDay,
   getActivitiesOverlappingDate,
   plannerDateKey,
 } from "@/lib/planner-dates";
@@ -34,6 +46,14 @@ import {
 import { Button } from "./ui/button";
 import PlannerStretchTimeline from "./planner-stretch-timeline";
 import ActivityEditDialog from "./activity-edit-dialog";
+import SavedPlaceDraggable from "./saved-place-draggable";
+import TimelineInsertDropZone from "./timeline-insert-drop-zone";
+import {
+  isSavedPlaceDragId,
+  parseSavedPlaceDragId,
+  parseTimelineInsertTarget,
+  TIMELINE_INSERT_EMPTY,
+} from "@/lib/planner-drag";
 import { CalendarDays, MapPin, RefreshCw, Route, Sparkles } from "lucide-react";
 
 interface ItineraryActivitiesProps {
@@ -186,6 +206,25 @@ function activityDurationMinutes(activity: ApiActivity) {
   );
 }
 
+function locationsAreNearby(
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number },
+) {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const earthRadiusM = 6371000;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLng = toRad(b.longitude - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+  const haversine =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return (
+    earthRadiusM * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine)) <
+    150
+  );
+}
+
 export default function ItineraryActivities({
   tripId,
   startDate,
@@ -248,7 +287,17 @@ export default function ItineraryActivities({
   const [showPrayerTimes, setShowPrayerTimes] = useState(true);
   const [travelMode, setTravelMode] = useState<TravelMode>("driving");
   const [error, setError] = useState<string | null>(null);
+  const [draggingSavedPlaceId, setDraggingSavedPlaceId] = useState<string | null>(
+    null,
+  );
+  const [addingSavedPlaceId, setAddingSavedPlaceId] = useState<string | null>(null);
   const addressDebounceRef = useRef<number | null>(null);
+
+  const plannerSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+  );
 
   const loadActivities = () => {
     setLoading(true);
@@ -598,6 +647,25 @@ export default function ItineraryActivities({
     const address = input.address?.trim() || input.title;
     if (!hasCoords && !input.address?.trim()) return;
 
+    const alreadySaved = locations.some((location) => {
+      if (hasCoords) {
+        const toRad = (deg: number) => (deg * Math.PI) / 180;
+        const earthRadiusM = 6371000;
+        const dLat = toRad(input.latitude! - location.latitude);
+        const dLng = toRad(input.longitude! - location.longitude);
+        const lat1 = toRad(location.latitude);
+        const lat2 = toRad(input.latitude!);
+        const haversine =
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+        const distanceM =
+          earthRadiusM * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+        return distanceM < 150;
+      }
+      return location.locationTitle.trim().toLowerCase() === input.title.trim().toLowerCase();
+    });
+    if (alreadySaved) return;
+
     try {
       const location = await api.addLocation(tripId, address, {
         locationTitle: input.title,
@@ -795,6 +863,209 @@ export default function ItineraryActivities({
     } finally {
       setReorderingActivities(false);
     }
+  }
+
+  function sortedDayActivities(
+    dateKey = selectedDate,
+    activityList: ApiActivity[] = activities,
+  ) {
+    return [...getActivitiesForDate(dateKey, activityList)].sort((a, b) =>
+      a.startTime.localeCompare(b.startTime),
+    );
+  }
+
+  function isLocationOnSelectedDay(
+    location: Pick<
+      ApiLocation,
+      "id" | "locationTitle" | "latitude" | "longitude"
+    >,
+  ) {
+    return sortedDayActivities().some((activity) => {
+      if (activity.latitude != null && activity.longitude != null) {
+        return locationsAreNearby(
+          { latitude: activity.latitude, longitude: activity.longitude },
+          location,
+        );
+      }
+      return (
+        activity.title.trim().toLowerCase() ===
+        location.locationTitle.trim().toLowerCase()
+      );
+    });
+  }
+
+  function findSlotAfterActivity(activityId: string) {
+    const dayActivities = sortedDayActivities();
+    const index = dayActivities.findIndex((activity) => activity.id === activityId);
+    if (index === -1) return findNextAvailableSlot();
+
+    const activity = dayActivities[index];
+    const activityEnd = clipActivityToDay(activity, selectedDate).endAt;
+    const next = dayActivities[index + 1];
+    const bufferMinutes = next
+      ? getTravelBufferAfterActivity(activity, next.id, travelTimeSegments) || 15
+      : 15;
+
+    let start = addMinutes(activityEnd, bufferMinutes);
+    let end = addMinutes(start, DEFAULT_ACTIVITY_DURATION_MINUTES);
+
+    if (next) {
+      const nextStart = clipActivityToDay(next, selectedDate).startAt;
+      const travelToNext =
+        getTravelBufferAfterActivity(activity, next.id, travelTimeSegments) || 15;
+      const latestEnd = addMinutes(nextStart, -travelToNext);
+      if (end > latestEnd) {
+        end = latestEnd;
+        start = addMinutes(end, -DEFAULT_ACTIVITY_DURATION_MINUTES);
+      }
+      if (start < activityEnd || end <= start) {
+        return findNextAvailableSlot();
+      }
+    }
+
+    return {
+      startTime: toDateTimeLocalValue(start),
+      endTime: toDateTimeLocalValue(end),
+    };
+  }
+
+  function findSlotBeforeActivity(activityId: string) {
+    const dayActivities = sortedDayActivities();
+    const index = dayActivities.findIndex((activity) => activity.id === activityId);
+    if (index === -1) return findNextAvailableSlot();
+
+    const target = dayActivities[index];
+    const targetStart = clipActivityToDay(target, selectedDate).startAt;
+
+    if (index === 0) {
+      const cursor = buildDateTime(selectedDate, PLANNER_DAY_START_HOUR);
+      return {
+        startTime: toDateTimeLocalValue(cursor),
+        endTime: toDateTimeLocalValue(
+          addMinutes(cursor, DEFAULT_ACTIVITY_DURATION_MINUTES),
+        ),
+      };
+    }
+
+    const previous = dayActivities[index - 1];
+    const previousEnd = clipActivityToDay(previous, selectedDate).endAt;
+    const travelFromPrevious =
+      getTravelBufferAfterActivity(previous, target.id, travelTimeSegments) || 15;
+
+    let end = addMinutes(targetStart, -travelFromPrevious);
+    let start = addMinutes(end, -DEFAULT_ACTIVITY_DURATION_MINUTES);
+
+    if (start < previousEnd) {
+      const bufferAfterPrevious =
+        getTravelBufferAfterActivity(previous, target.id, travelTimeSegments) || 15;
+      start = addMinutes(previousEnd, bufferAfterPrevious);
+      end = addMinutes(start, DEFAULT_ACTIVITY_DURATION_MINUTES);
+      if (end > targetStart) {
+        return findNextAvailableSlot();
+      }
+    }
+
+    return {
+      startTime: toDateTimeLocalValue(start),
+      endTime: toDateTimeLocalValue(end),
+    };
+  }
+
+  async function handleAddSavedPlaceToTimeline(
+    location: Pick<
+      ApiLocation,
+      "id" | "locationTitle" | "latitude" | "longitude"
+    >,
+    target: NonNullable<ReturnType<typeof parseTimelineInsertTarget>>,
+  ) {
+    if (isLocationOnSelectedDay(location)) {
+      setError(`"${location.locationTitle}" is already scheduled on this day.`);
+      return;
+    }
+
+    setAddingSavedPlaceId(location.id);
+    setError(null);
+    setScheduleNotice(null);
+
+    try {
+      let slot: { startTime: string; endTime: string };
+      if (target.type === "before") {
+        slot = findSlotBeforeActivity(target.activityId);
+      } else if (target.type === "after") {
+        slot = findSlotAfterActivity(target.activityId);
+      } else {
+        slot = findNextAvailableSlot();
+      }
+
+      const start = new Date(slot.startTime);
+      const end = new Date(slot.endTime);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+        setError("Could not find a valid time slot. Try another position on the timeline.");
+        return;
+      }
+
+      await createActivity({
+        title: location.locationTitle,
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+        latitude: location.latitude,
+        longitude: location.longitude,
+      });
+      setScheduleNotice(
+        `Added "${location.locationTitle}" to ${selectedDay?.label ?? "this day"}.`,
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to add saved place to timeline",
+      );
+    } finally {
+      setAddingSavedPlaceId(null);
+    }
+  }
+
+  function handlePlannerDragStart(event: DragStartEvent) {
+    const activeId = String(event.active.id);
+    if (isSavedPlaceDragId(activeId)) {
+      setDraggingSavedPlaceId(parseSavedPlaceDragId(activeId));
+    }
+  }
+
+  async function handlePlannerDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    const activeId = String(active.id);
+    setDraggingSavedPlaceId(null);
+
+    if (!over) return;
+
+    const overId = String(over.id);
+
+    if (isSavedPlaceDragId(activeId)) {
+      const locationId = parseSavedPlaceDragId(activeId);
+      if (!locationId) return;
+
+      const location = [...locations]
+        .sort((a, b) => a.order - b.order)
+        .find((item) => item.id === locationId);
+      if (!location) return;
+
+      const insertTarget = parseTimelineInsertTarget(overId);
+      if (!insertTarget) return;
+
+      await handleAddSavedPlaceToTimeline(location, insertTarget);
+      return;
+    }
+
+    if (parseTimelineInsertTarget(overId)) return;
+
+    const dayActivityIds = sortedDayActivities().map((activity) => activity.id);
+    if (!dayActivityIds.includes(activeId) || !dayActivityIds.includes(overId)) {
+      return;
+    }
+    if (activeId === overId) return;
+
+    const oldIndex = dayActivityIds.indexOf(activeId);
+    const newIndex = dayActivityIds.indexOf(overId);
+    await handleReorderActivities(arrayMove(dayActivityIds, oldIndex, newIndex));
   }
 
   async function handleEditActivitySave(values: {
@@ -1046,8 +1317,8 @@ export default function ItineraryActivities({
   const sortedLocations = [...locations].sort((a, b) => a.order - b.order);
 
   return (
-    <div className='space-y-6'>
-      <section className='rounded-xl border border-gray-200 bg-white p-4 shadow-sm'>
+    <div className='min-w-0 max-w-full space-y-6 overflow-x-hidden'>
+      <section className='rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4'>
         <div className='flex flex-col gap-3 md:flex-row md:items-center md:justify-between'>
           <div>
             <div className='flex items-center gap-2 text-blue-700'>
@@ -1067,7 +1338,7 @@ export default function ItineraryActivities({
           </div>
         </div>
 
-        <div className='mt-4 flex gap-2 overflow-x-auto pb-1'>
+        <div className='mt-4 flex flex-wrap gap-2 pb-1 xl:gap-3'>
           {plannerDays.map((day) => {
             const count = activitiesByDate[day.dateKey]?.length ?? 0;
             return (
@@ -1075,7 +1346,7 @@ export default function ItineraryActivities({
                 key={day.dateKey}
                 type='button'
                 onClick={() => handleSelectDate(day.dateKey)}
-                className={`min-w-28 rounded-xl border px-4 py-3 text-left transition ${
+                className={`min-w-28 flex-1 rounded-xl border px-4 py-3 text-left transition sm:min-w-32 sm:flex-none xl:min-w-[8.5rem] ${
                   selectedDate === day.dateKey
                     ? "border-blue-600 bg-blue-600 text-white shadow"
                     : "border-gray-200 bg-gray-50 text-gray-700 hover:border-blue-200 hover:bg-blue-50"
@@ -1091,9 +1362,9 @@ export default function ItineraryActivities({
           })}
         </div>
 
-        <div className='mt-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4'>
+        <div className='mt-4 rounded-xl border border-blue-100 bg-blue-50/60 p-3 sm:p-4'>
           <div className='flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between'>
-            <div className='flex-1'>
+            <div className='min-w-0 flex-1'>
               <label
                 htmlFor='assign-day'
                 className='mb-2 block text-sm font-medium text-gray-800'
@@ -1104,7 +1375,7 @@ export default function ItineraryActivities({
                 id='assign-day'
                 value={selectedDate}
                 onChange={(e) => handleAssignDay(e.target.value)}
-                className='w-full rounded-lg border border-gray-300 bg-white p-3 text-sm'
+                className='w-full min-w-0 rounded-lg border border-gray-300 bg-white p-3 text-sm'
               >
                 {plannerDays.map((day) => {
                   const count = activitiesByDate[day.dateKey]?.length ?? 0;
@@ -1124,7 +1395,7 @@ export default function ItineraryActivities({
             <Button
               type='button'
               variant='outline'
-              className='shrink-0 gap-2 bg-white'
+              className='w-full shrink-0 gap-2 bg-white sm:w-auto'
               onClick={handleSuggestDay}
             >
               <Sparkles className='h-4 w-4' />
@@ -1134,10 +1405,16 @@ export default function ItineraryActivities({
         </div>
       </section>
 
-      <section className='grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]'>
-        <div className='rounded-xl border border-gray-200 bg-white p-4 shadow-sm'>
-          <div className='mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
-            <div>
+      <DndContext
+        sensors={plannerSensors}
+        collisionDetection={closestCenter}
+        onDragStart={handlePlannerDragStart}
+        onDragEnd={(event) => void handlePlannerDragEnd(event)}
+      >
+      <section className='grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-stretch xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]'>
+        <div className='flex min-h-0 flex-col rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4 lg:min-h-[min(72vh,720px)]'>
+          <div className='mb-4 flex flex-col gap-3'>
+            <div className='min-w-0'>
               <h3 className='text-lg font-semibold text-gray-900'>
                 {selectedDay?.label ?? "Selected day"} timeline
               </h3>
@@ -1145,23 +1422,23 @@ export default function ItineraryActivities({
                 {selectedDay?.shortDate ?? selectedDate}
                 {prayerTimes ? ` · ${prayerTimes.timezone}` : ""}
               </p>
-              <p className='mt-1 text-xs text-gray-500'>
+              <p className='mt-1 hidden text-xs text-gray-500 lg:block'>
                 Activities stack in order with travel info on each card. Nearby
-                stops automatically use walking. Prayer times appear on the
-                right.
+                stops automatically use walking. Prayer times show below each
+                activity on tablets, or on the right on wide desktop layouts.
               </p>
             </div>
-            <div className='flex flex-wrap items-center gap-3'>
+            <div className='flex min-w-0 flex-wrap items-center gap-2 sm:gap-3'>
               {selectedActivities.length >= 2 && (
                 <>
-                  <label className='flex items-center gap-2 text-xs font-medium text-gray-600'>
-                    <span className='hidden sm:inline'>Travel by</span>
+                  <label className='flex w-full min-w-0 items-center gap-2 text-xs font-medium text-gray-600 sm:w-auto'>
+                    <span>Travel by</span>
                     <select
                       value={travelMode}
                       onChange={(e) =>
                         handleTravelModeChange(e.target.value as TravelMode)
                       }
-                      className='rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs'
+                      className='min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs sm:flex-none'
                     >
                       {TRAVEL_MODE_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
@@ -1174,7 +1451,7 @@ export default function ItineraryActivities({
                     type='button'
                     variant='outline'
                     size='sm'
-                    className='gap-2'
+                    className='w-full gap-2 sm:w-auto'
                     disabled={
                       syncingSchedule ||
                       travelTimesLoading ||
@@ -1186,8 +1463,8 @@ export default function ItineraryActivities({
                     {syncingSchedule
                       ? "Adjusting..."
                       : pendingTravelAdjustments.length > 0
-                        ? `Add travel gaps (${pendingTravelAdjustments.length})`
-                        : "Travel gaps applied"}
+                        ? `Add gaps (${pendingTravelAdjustments.length})`
+                        : "Gaps applied"}
                   </Button>
                 </>
               )}
@@ -1221,11 +1498,21 @@ export default function ItineraryActivities({
             </p>
           ) : !hasTimelineContent ? (
             <div className='rounded-lg border border-dashed border-gray-300 bg-gray-50 p-6 text-center'>
+              {sortedLocations.length > 0 && (
+                <div className='mb-4 text-left'>
+                  <TimelineInsertDropZone
+                    id={TIMELINE_INSERT_EMPTY}
+                    visible={draggingSavedPlaceId != null}
+                    label='Drop a saved place here to start this day'
+                  />
+                </div>
+              )}
               <p className='font-medium text-gray-700'>
                 No activities planned for this day yet.
               </p>
               <p className='mt-1 text-sm text-gray-500'>
-                Add your own activity below or choose one from recommendations.
+                Drag a saved place from the sidebar, tap + to add one, or use the
+                form below.
               </p>
               {!hasLocations && (
                 <p className='mt-2 text-sm text-amber-700'>
@@ -1234,6 +1521,7 @@ export default function ItineraryActivities({
               )}
             </div>
           ) : (
+            <div className='flex min-h-0 flex-1 flex-col'>
             <PlannerStretchTimeline
               tripId={tripId}
               dateKey={selectedDate}
@@ -1250,7 +1538,10 @@ export default function ItineraryActivities({
               onDeleteActivity={handleDelete}
               onEditActivity={setEditingActivity}
               onReorderActivities={handleReorderActivities}
+              showInsertDropZones={draggingSavedPlaceId != null}
+              stretchHeight
             />
+            </div>
           )}
 
           {prayerTimesError && showPrayerTimes && (
@@ -1263,68 +1554,107 @@ export default function ItineraryActivities({
           )}
         </div>
 
-        <aside className='rounded-xl border border-gray-200 bg-white p-4 shadow-sm'>
-          <div className='mb-3 flex items-center gap-2'>
-            <MapPin className='h-5 w-5 text-blue-600' />
-            <h3 className='font-semibold text-gray-900'>Saved trip places</h3>
+        <aside
+          className={`flex min-h-0 min-w-0 flex-col rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4 ${
+            sortedLocations.length > 0
+              ? "max-h-[min(48vh,420px)] lg:max-h-none lg:h-full"
+              : "lg:h-full"
+          }`}
+        >
+          <div className='mb-3 flex shrink-0 items-center justify-between gap-2'>
+            <div className='flex items-center gap-2'>
+              <MapPin className='h-5 w-5 shrink-0 text-blue-600' />
+              <h3 className='font-semibold text-gray-900'>Saved trip places</h3>
+            </div>
+            {sortedLocations.length > 0 && (
+              <span className='shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600'>
+                {sortedLocations.length}
+              </span>
+            )}
           </div>
           {sortedLocations.length === 0 ? (
             <p className='text-sm text-gray-500'>
               Add locations first to make recommendations stronger.
             </p>
           ) : (
-            <ul className='space-y-2'>
-              {sortedLocations.map((location, index) => (
-                <li
-                  key={location.id}
-                  className='rounded-lg border border-gray-100 bg-gray-50 p-3'
-                >
-                  <p className='text-sm font-medium text-gray-900'>
-                    {index + 1}. {location.locationTitle}
-                  </p>
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`}
-                    target='_blank'
-                    rel='noreferrer'
-                    className='mt-1 inline-block text-xs text-blue-600 hover:underline'
-                  >
-                    View on Maps
-                  </a>
-                </li>
-              ))}
-            </ul>
+            <>
+              <p className='mb-2 shrink-0 text-xs text-gray-500'>
+                Drag to a blue slot on the timeline, or tap + to add at the end
+                of this day.
+              </p>
+              <div className='min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5'>
+                <ul className='space-y-2'>
+                  {sortedLocations.map((location, index) => (
+                    <SavedPlaceDraggable
+                      key={location.id}
+                      locationId={location.id}
+                      title={location.locationTitle}
+                      latitude={location.latitude}
+                      longitude={location.longitude}
+                      index={index}
+                      adding={addingSavedPlaceId === location.id}
+                      onTimeline={isLocationOnSelectedDay(location)}
+                      onQuickAdd={() =>
+                        void handleAddSavedPlaceToTimeline(location, {
+                          type: "end",
+                        })
+                      }
+                    />
+                  ))}
+                </ul>
+              </div>
+            </>
           )}
         </aside>
       </section>
+      <DragOverlay dropAnimation={null}>
+        {draggingSavedPlaceId ? (
+          (() => {
+            const dragged = sortedLocations.find(
+              (location) => location.id === draggingSavedPlaceId,
+            );
+            if (!dragged) return null;
+            return (
+              <div className='w-64 rounded-lg border border-blue-300 bg-white p-3 shadow-lg'>
+                <p className='text-sm font-medium text-gray-900'>
+                  {dragged.locationTitle}
+                </p>
+                <p className='mt-1 text-xs text-blue-600'>Drop on timeline</p>
+              </div>
+            );
+          })()
+        ) : null}
+      </DragOverlay>
+      </DndContext>
 
       <form
         onSubmit={handleSubmit}
-        className='rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4'
+        className='content-well max-w-full min-w-0 space-y-4 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 p-3 sm:p-4 xl:max-w-4xl'
       >
         <h3 className='font-semibold text-gray-800'>
           Add activity to {selectedDay?.label ?? "selected day"}
         </h3>
-        <div className='grid gap-4 md:grid-cols-2'>
+        <div className='grid min-w-0 gap-4 md:grid-cols-2'>
           <input
             type='text'
             placeholder='Activity title (e.g. Museum visit)'
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
-            className='border border-gray-300 rounded-lg p-3 md:col-span-2'
+            className='box-border w-full min-w-0 rounded-lg border border-gray-300 p-3 md:col-span-2'
           />
           <input
             type='text'
             placeholder='Description (optional)'
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className='border border-gray-300 rounded-lg p-3 md:col-span-2'
+            className='box-border w-full min-w-0 rounded-lg border border-gray-300 p-3 md:col-span-2'
           />
           {sortedLocations.length > 0 && (
             <select
               value={activityLocationId}
               onChange={(e) => handleSelectSavedLocation(e.target.value)}
-              className='border border-gray-300 rounded-lg p-3 md:col-span-2'
+              className='box-border w-full min-w-0 rounded-lg border border-gray-300 p-3 md:col-span-2'
             >
               <option value=''>Use a saved trip place (optional)</option>
               {sortedLocations.map((location) => (
@@ -1334,7 +1664,7 @@ export default function ItineraryActivities({
               ))}
             </select>
           )}
-          <div className='relative md:col-span-2'>
+          <div className='relative min-w-0 md:col-span-2'>
             <input
               type='text'
               placeholder='Activity location or address (optional)'
@@ -1343,7 +1673,7 @@ export default function ItineraryActivities({
               onBlur={() =>
                 window.setTimeout(() => setAddressSuggestions([]), 150)
               }
-              className='w-full border border-gray-300 rounded-lg p-3'
+              className='box-border w-full min-w-0 rounded-lg border border-gray-300 p-3'
             />
             {addressSuggestions.length > 0 && (
               <ul className='absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg'>
@@ -1380,17 +1710,17 @@ export default function ItineraryActivities({
             value={startTime || nextAvailableActivityTime.startTime}
             onChange={(e) => setStartTime(e.target.value)}
             required
-            className='border border-gray-300 rounded-lg p-3'
+            className='box-border w-full min-w-0 max-w-full rounded-lg border border-gray-300 p-3'
           />
           <input
             type='datetime-local'
             value={endTime || nextAvailableActivityTime.endTime}
             onChange={(e) => setEndTime(e.target.value)}
             required
-            className='border border-gray-300 rounded-lg p-3'
+            className='box-border w-full min-w-0 max-w-full rounded-lg border border-gray-300 p-3'
           />
         </div>
-        <Button type='submit' disabled={submitting}>
+        <Button type='submit' disabled={submitting} className='w-full sm:w-auto'>
           {submitting ? "Saving..." : "Add Activity"}
         </Button>
       </form>
@@ -1406,9 +1736,9 @@ export default function ItineraryActivities({
         onSave={handleEditActivitySave}
       />
 
-      <section className='rounded-lg border border-blue-100 bg-blue-50/40 p-4'>
+      <section className='min-w-0 max-w-full overflow-hidden rounded-lg border border-blue-100 bg-blue-50/40 p-3 sm:p-4'>
         <div className='mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
-          <div>
+          <div className='min-w-0'>
             <h3 className='font-semibold text-gray-800'>
               Recommended activities
             </h3>
@@ -1419,7 +1749,7 @@ export default function ItineraryActivities({
               {selectedDay?.shortDate ?? selectedDate}).
             </p>
           </div>
-          <div className='flex flex-col gap-2 sm:items-end'>
+          <div className='flex w-full flex-col gap-2 sm:w-auto sm:items-end'>
             <Button
               type='button'
               size='sm'
@@ -1428,7 +1758,7 @@ export default function ItineraryActivities({
                 !hasLocations || recommendationsLoading || recommendationsRefreshing
               }
               onClick={handleRefreshRecommendations}
-              className='gap-2'
+              className='w-full gap-2 sm:w-auto'
             >
               <RefreshCw
                 className={`h-4 w-4 ${
@@ -1439,7 +1769,7 @@ export default function ItineraryActivities({
                 ? "Finding new ideas..."
                 : "Suggest new recommendations"}
             </Button>
-            <div className='sm:w-64'>
+            <div className='w-full min-w-0 sm:w-64'>
             <label
               htmlFor='recommendation-day'
               className='mb-1 block text-xs font-medium text-gray-600'
@@ -1450,7 +1780,7 @@ export default function ItineraryActivities({
               id='recommendation-day'
               value={selectedDate}
               onChange={(e) => handleAssignDay(e.target.value)}
-              className='w-full rounded-lg border border-gray-300 bg-white p-2 text-sm'
+              className='box-border w-full min-w-0 rounded-lg border border-gray-300 bg-white p-2 text-sm'
             >
               {plannerDays.map((day) => (
                 <option key={day.dateKey} value={day.dateKey}>
@@ -1504,7 +1834,7 @@ export default function ItineraryActivities({
             <p className='rounded-lg bg-white p-3 text-sm text-blue-800'>
               {visibleRecommendations.note}
             </p>
-            <div className='flex gap-2 overflow-x-auto pb-1'>
+            <div className='touch-scroll-x flex gap-2 overflow-x-auto pb-1'>
               {recommendationCategories.map((category) => (
                 <button
                   key={category}
@@ -1573,17 +1903,17 @@ export default function ItineraryActivities({
                         return (
                           <div
                             key={place.id}
-                            className='rounded-lg border border-gray-100 p-3'
+                            className='min-w-0 rounded-lg border border-gray-100 p-3'
                           >
                             <div className='flex flex-wrap items-start justify-between gap-2'>
-                              <div>
-                                <p className='font-semibold text-gray-900'>
+                              <div className='min-w-0 flex-1'>
+                                <p className='break-words font-semibold text-gray-900'>
                                   {place.name}
                                 </p>
-                                <p className='text-sm text-gray-500'>
+                                <p className='break-words text-sm text-gray-500'>
                                   {place.address || "No address available"}
                                 </p>
-                                <p className='mt-2 text-sm text-gray-600'>
+                                <p className='mt-2 break-words text-sm text-gray-600'>
                                   {place.about}
                                 </p>
                               </div>
@@ -1620,7 +1950,7 @@ export default function ItineraryActivities({
                                 View on Maps
                               </a>
                             </div>
-                            <div className='mt-3 grid gap-2 sm:grid-cols-2'>
+                            <div className='mt-3 grid min-w-0 gap-2 sm:grid-cols-2'>
                               <input
                                 type='datetime-local'
                                 value={time.startTime}
@@ -1631,7 +1961,7 @@ export default function ItineraryActivities({
                                     e.target.value,
                                   )
                                 }
-                                className='rounded-lg border border-gray-300 p-2 text-sm'
+                                className='box-border w-full min-w-0 max-w-full rounded-lg border border-gray-300 p-2 text-sm'
                               />
                               <input
                                 type='datetime-local'
@@ -1643,7 +1973,7 @@ export default function ItineraryActivities({
                                     e.target.value,
                                   )
                                 }
-                                className='rounded-lg border border-gray-300 p-2 text-sm'
+                                className='box-border w-full min-w-0 max-w-full rounded-lg border border-gray-300 p-2 text-sm'
                               />
                             </div>
                             {scheduleMeta.scheduleNote && (
@@ -1667,7 +1997,7 @@ export default function ItineraryActivities({
                             <Button
                               type='button'
                               size='sm'
-                              className='mt-3'
+                              className='mt-3 w-full sm:w-auto'
                               disabled={submitting}
                               onClick={() =>
                                 handleAddRecommendation(

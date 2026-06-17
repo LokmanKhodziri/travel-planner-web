@@ -84,6 +84,16 @@ export interface ApiExpense {
   updateAt: string | null;
 }
 
+export interface ApiTripBudget {
+  id: string;
+  tripId: string;
+  currency: string;
+  totalAmount: number | null;
+  categoryBudgets: Partial<Record<ExpenseCategory, number>> | null;
+  createAt: string;
+  updateAt: string | null;
+}
+
 export interface PrayerTimings {
   date: string;
   timezone: string;

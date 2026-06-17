@@ -31,7 +31,7 @@ export default async function ProfilePage() {
   };
 
   return (
-    <div className='container mx-auto space-y-8 px-4 py-10'>
+    <div className='page-shell min-w-0 space-y-6 py-8 sm:space-y-8 sm:py-10'>
       <header>
         <h1 className='text-3xl font-bold tracking-tight sm:text-4xl'>Profile</h1>
         <p className='mt-2 text-gray-600'>
@@ -39,7 +39,7 @@ export default async function ProfilePage() {
         </p>
       </header>
 
-      <div className='grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]'>
+      <div className='grid gap-6 lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)] xl:grid-cols-[minmax(300px,360px)_minmax(0,720px)] xl:justify-center 2xl:max-w-6xl 2xl:mx-auto'>
         <Card className='border-gray-200'>
           <CardContent className='flex flex-col items-center px-6 py-8 text-center'>
             <ProfileAvatar
@@ -84,44 +84,44 @@ export default async function ProfilePage() {
         </Card>
 
         <div className='space-y-6'>
-          <section className='grid gap-4 sm:grid-cols-3'>
+          <section className='grid grid-cols-3 gap-2 sm:gap-4 xl:max-w-2xl'>
             <Card className='border-gray-200'>
-              <CardHeader className='pb-2'>
-                <CardTitle className='text-sm font-medium text-gray-500'>
+              <CardHeader className='p-3 pb-1 sm:p-6 sm:pb-2'>
+                <CardTitle className='text-xs font-medium text-gray-500 sm:text-sm'>
                   Trips
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className='text-3xl font-bold text-gray-900'>{stats.trips}</p>
-                <p className='mt-1 text-xs text-gray-500'>
+              <CardContent className='p-3 pt-0 sm:p-6 sm:pt-0'>
+                <p className='text-2xl font-bold text-gray-900 sm:text-3xl'>{stats.trips}</p>
+                <p className='mt-1 text-[11px] text-gray-500 sm:text-xs'>
                   {stats.upcomingTrips} upcoming
                 </p>
               </CardContent>
             </Card>
             <Card className='border-gray-200'>
-              <CardHeader className='pb-2'>
-                <CardTitle className='text-sm font-medium text-gray-500'>
+              <CardHeader className='p-3 pb-1 sm:p-6 sm:pb-2'>
+                <CardTitle className='text-xs font-medium text-gray-500 sm:text-sm'>
                   Activities
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className='text-3xl font-bold text-gray-900'>
+              <CardContent className='p-3 pt-0 sm:p-6 sm:pt-0'>
+                <p className='text-2xl font-bold text-gray-900 sm:text-3xl'>
                   {stats.activities}
                 </p>
-                <p className='mt-1 text-xs text-gray-500'>Planned stops</p>
+                <p className='mt-1 text-[11px] text-gray-500 sm:text-xs'>Planned stops</p>
               </CardContent>
             </Card>
             <Card className='border-gray-200'>
-              <CardHeader className='pb-2'>
-                <CardTitle className='text-sm font-medium text-gray-500'>
+              <CardHeader className='p-3 pb-1 sm:p-6 sm:pb-2'>
+                <CardTitle className='text-xs font-medium text-gray-500 sm:text-sm'>
                   Locations
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className='text-3xl font-bold text-gray-900'>
+              <CardContent className='p-3 pt-0 sm:p-6 sm:pt-0'>
+                <p className='text-2xl font-bold text-gray-900 sm:text-3xl'>
                   {stats.locations}
                 </p>
-                <p className='mt-1 text-xs text-gray-500'>Saved places</p>
+                <p className='mt-1 text-[11px] text-gray-500 sm:text-xs'>Saved places</p>
               </CardContent>
             </Card>
           </section>
@@ -130,7 +130,7 @@ export default async function ProfilePage() {
             <CardHeader>
               <CardTitle>Account settings</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className='form-well'>
               <ProfileForm user={user} />
             </CardContent>
           </Card>
@@ -140,7 +140,7 @@ export default async function ProfilePage() {
               <CardHeader>
                 <CardTitle>Change password</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className='form-well'>
                 <ChangePasswordForm />
               </CardContent>
             </Card>

@@ -33,7 +33,7 @@ function TabsTrigger({ className, ...props }: React.ComponentProps<typeof TabsPr
 function TabsContent({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.Content>) {
   return (
     <TabsPrimitive.Content
-      className={cn("mt-2 outline-none", className)}
+      className={cn("mt-2 min-w-0 outline-none", className)}
       {...props}
     />
   );
