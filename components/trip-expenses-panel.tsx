@@ -12,6 +12,7 @@ import {
   groupExpensesByCurrency,
 } from "@/lib/expense-categories";
 import { Button } from "./ui/button";
+import TripBudgetCard from "./trip-budget-card";
 import {
   BedDouble,
   Bus,
@@ -147,10 +148,12 @@ export default function TripExpensesPanel({
       <div>
         <h2 className='text-xl font-semibold text-gray-900'>Travel expenses</h2>
         <p className='mt-1 text-sm text-gray-500'>
-          Track transport, accommodation, food, activities, and other trip costs
-          in one place.
+          Set a trip budget, split by category if you like, then log what you
+          actually spend.
         </p>
       </div>
+
+      <TripBudgetCard tripId={tripId} expenses={expenses} />
 
       <div className='grid min-w-0 gap-3 sm:grid-cols-2 sm:gap-4 2xl:grid-cols-3'>
         {Object.entries(totalsByCurrency).map(([code, total]) => (
