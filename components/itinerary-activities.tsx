@@ -1282,36 +1282,51 @@ export default function ItineraryActivities({
           )}
         </div>
 
-        <aside className='min-w-0 rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4'>
-          <div className='mb-3 flex items-center gap-2'>
-            <MapPin className='h-5 w-5 text-blue-600' />
-            <h3 className='font-semibold text-gray-900'>Saved trip places</h3>
+        <aside
+          className={`flex min-h-0 min-w-0 flex-col rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4 ${
+            sortedLocations.length > 0
+              ? "max-h-[min(48vh,420px)] lg:max-h-[min(72vh,720px)]"
+              : ""
+          }`}
+        >
+          <div className='mb-3 flex shrink-0 items-center justify-between gap-2'>
+            <div className='flex items-center gap-2'>
+              <MapPin className='h-5 w-5 shrink-0 text-blue-600' />
+              <h3 className='font-semibold text-gray-900'>Saved trip places</h3>
+            </div>
+            {sortedLocations.length > 0 && (
+              <span className='shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600'>
+                {sortedLocations.length}
+              </span>
+            )}
           </div>
           {sortedLocations.length === 0 ? (
             <p className='text-sm text-gray-500'>
               Add locations first to make recommendations stronger.
             </p>
           ) : (
-            <ul className='space-y-2'>
-              {sortedLocations.map((location, index) => (
-                <li
-                  key={location.id}
-                  className='rounded-lg border border-gray-100 bg-gray-50 p-3'
-                >
-                  <p className='break-words text-sm font-medium text-gray-900'>
-                    {index + 1}. {location.locationTitle}
-                  </p>
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`}
-                    target='_blank'
-                    rel='noreferrer'
-                    className='mt-1 inline-block text-xs text-blue-600 hover:underline'
+            <div className='min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5'>
+              <ul className='space-y-2'>
+                {sortedLocations.map((location, index) => (
+                  <li
+                    key={location.id}
+                    className='rounded-lg border border-gray-100 bg-gray-50 p-3'
                   >
-                    View on Maps
-                  </a>
-                </li>
-              ))}
-            </ul>
+                    <p className='break-words text-sm font-medium text-gray-900'>
+                      {index + 1}. {location.locationTitle}
+                    </p>
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`}
+                      target='_blank'
+                      rel='noreferrer'
+                      className='mt-1 inline-block text-xs text-blue-600 hover:underline'
+                    >
+                      View on Maps
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </aside>
       </section>
