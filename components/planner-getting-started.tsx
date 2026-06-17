@@ -6,12 +6,14 @@ interface PlannerGettingStartedProps {
   tripId: string;
   hasLocations: boolean;
   onAddActivity: () => void;
+  onBrowseDiscover?: () => void;
 }
 
 export default function PlannerGettingStarted({
   tripId,
   hasLocations,
   onAddActivity,
+  onBrowseDiscover,
 }: PlannerGettingStartedProps) {
   return (
     <section className='rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5'>
@@ -66,18 +68,23 @@ export default function PlannerGettingStarted({
           <div className='min-w-0 flex-1'>
             <p className='font-medium text-gray-900'>Add your first activity</p>
             <p className='mt-0.5 text-sm text-gray-500'>
-              Add manually or pick a suggestion from recommendations below.
+              Add manually or browse ideas in the Discover tab.
             </p>
             <div className='mt-2 flex flex-wrap gap-2'>
               <Button size='sm' className='gap-2' onClick={onAddActivity}>
                 <Plus className='h-4 w-4' />
                 Add activity
               </Button>
-              {hasLocations && (
-                <p className='flex items-center gap-1 text-xs text-gray-500'>
-                  <Sparkles className='h-3.5 w-3.5' />
-                  Or scroll to recommendations
-                </p>
+              {hasLocations && onBrowseDiscover && (
+                <Button
+                  size='sm'
+                  variant='outline'
+                  className='gap-2'
+                  onClick={onBrowseDiscover}
+                >
+                  <Sparkles className='h-4 w-4' />
+                  Browse Discover
+                </Button>
               )}
             </div>
           </div>
