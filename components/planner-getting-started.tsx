@@ -16,8 +16,10 @@ export default function PlannerGettingStarted({
   onBrowseDiscover,
 }: PlannerGettingStartedProps) {
   return (
-    <section className='rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5'>
-      <h3 className='text-lg font-semibold text-gray-900'>Start planning your trip</h3>
+    <div>
+      <h3 className='text-base font-semibold text-gray-900 sm:text-lg'>
+        Start planning your trip
+      </h3>
       <p className='mt-1 text-sm text-gray-600'>
         Follow these steps to build your first day. You can hide this once you add
         an activity.
@@ -90,7 +92,7 @@ export default function PlannerGettingStarted({
           </div>
         </li>
       </ol>
-    </section>
+    </div>
   );
 
 }
