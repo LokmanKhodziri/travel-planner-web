@@ -474,6 +474,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                 id: activity.id,
                 title: activity.title,
                 startTime: activity.startTime,
+                endTime: activity.endTime,
               }))}
             />
           </TabsContent>

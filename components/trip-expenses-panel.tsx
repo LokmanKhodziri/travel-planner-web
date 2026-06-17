@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import type { ApiActivity, ApiExpense, ExpenseCategory } from "@/types/api";
+import type { ApiExpense, ExpenseCategory } from "@/types/api";
+import {
+  buildPlannerDayOptions,
+  formatActivityExpenseOption,
+  getActivityExpenseDate,
+  groupActivitiesByDay,
+  type ExpenseLinkableActivity,
+} from "@/lib/expense-activity";
 import {
   CURRENCY_OPTIONS,
   EXPENSE_CATEGORY_OPTIONS,
@@ -29,7 +36,7 @@ interface TripExpensesPanelProps {
   tripId: string;
   startDate: string;
   endDate: string;
-  activities?: Pick<ApiActivity, "id" | "title" | "startTime">[];
+  activities?: ExpenseLinkableActivity[];
 }
 
 const CATEGORY_ICONS: Record<ExpenseCategory, typeof Bus> = {
@@ -68,6 +75,20 @@ export default function TripExpensesPanel({
   const [expenseDate, setExpenseDate] = useState(defaultDate);
   const [notes, setNotes] = useState("");
   const [activityId, setActivityId] = useState("");
+  const [dateTouched, setDateTouched] = useState(false);
+
+  const plannerDays = useMemo(
+    () => buildPlannerDayOptions(startDate, endDate),
+    [startDate, endDate],
+  );
+  const activityGroups = useMemo(
+    () => groupActivitiesByDay(activities, plannerDays),
+    [activities, plannerDays],
+  );
+  const selectedLinkedActivity = useMemo(
+    () => activities.find((activity) => activity.id === activityId) ?? null,
+    [activities, activityId],
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -88,6 +109,20 @@ export default function TripExpensesPanel({
     () => groupExpensesByCategory(expenses),
     [expenses],
   );
+
+  function handleActivityLinkChange(nextActivityId: string) {
+    setActivityId(nextActivityId);
+    if (!nextActivityId) {
+      setDateTouched(false);
+      return;
+    }
+
+    const activity = activities.find((item) => item.id === nextActivityId);
+    if (!activity) return;
+
+    setExpenseDate(getActivityExpenseDate(activity));
+    setDateTouched(false);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -114,6 +149,7 @@ export default function TripExpensesPanel({
       setAmount("");
       setNotes("");
       setActivityId("");
+      setDateTouched(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add expense");
     } finally {
@@ -133,8 +169,11 @@ export default function TripExpensesPanel({
     }
   }
 
-  const linkedActivityTitle = (id: string | null) =>
-    activities.find((activity) => activity.id === id)?.title;
+  const linkedActivityTitle = (id: string | null) => {
+    const activity = activities.find((item) => item.id === id);
+    if (!activity) return null;
+    return formatActivityExpenseOption(activity, plannerDays);
+  };
 
   const selectedCategory = EXPENSE_CATEGORY_OPTIONS.find(
     (option) => option.value === category,
@@ -276,19 +315,6 @@ export default function TripExpensesPanel({
             )}
           </label>
 
-          <label className='block min-w-0 space-y-1 text-sm'>
-            <span className='font-medium text-gray-700'>Date</span>
-            <input
-              type='date'
-              value={expenseDate}
-              min={startDate.slice(0, 10)}
-              max={endDate.slice(0, 10)}
-              onChange={(e) => setExpenseDate(e.target.value)}
-              required
-              className={fieldClass}
-            />
-          </label>
-
           {activities.length > 0 && (
             <label className='block min-w-0 space-y-1 text-sm'>
               <span className='font-medium text-gray-700'>
@@ -296,18 +322,51 @@ export default function TripExpensesPanel({
               </span>
               <select
                 value={activityId}
-                onChange={(e) => setActivityId(e.target.value)}
+                onChange={(e) => handleActivityLinkChange(e.target.value)}
                 className={fieldClass}
               >
                 <option value=''>None</option>
-                {activities.map((activity) => (
-                  <option key={activity.id} value={activity.id}>
-                    {activity.title}
-                  </option>
+                {activityGroups.map(({ day, activities: dayActivities }) => (
+                  <optgroup
+                    key={day.dateKey}
+                    label={`${day.label} · ${day.shortDate}`}
+                  >
+                    {dayActivities.map((activity) => (
+                      <option key={activity.id} value={activity.id}>
+                        {formatActivityExpenseOption(activity, plannerDays)}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
+              <p className='text-xs text-gray-500'>
+                Picking an activity sets the expense date to that day. Duplicate
+                places on different days appear as separate options.
+              </p>
             </label>
           )}
+
+          <label className='block min-w-0 space-y-1 text-sm'>
+            <span className='font-medium text-gray-700'>Date</span>
+            <input
+              type='date'
+              value={expenseDate}
+              min={startDate.slice(0, 10)}
+              max={endDate.slice(0, 10)}
+              onChange={(e) => {
+                setExpenseDate(e.target.value);
+                setDateTouched(true);
+              }}
+              required
+              className={fieldClass}
+            />
+            {selectedLinkedActivity && !dateTouched && (
+              <p className='text-xs text-blue-600'>
+                Matched to{" "}
+                {formatActivityExpenseOption(selectedLinkedActivity, plannerDays)}
+              </p>
+            )}
+          </label>
 
           <label className='block min-w-0 space-y-1 text-sm'>
             <span className='font-medium text-gray-700'>

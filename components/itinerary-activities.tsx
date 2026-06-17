@@ -1411,8 +1411,8 @@ export default function ItineraryActivities({
         onDragStart={handlePlannerDragStart}
         onDragEnd={(event) => void handlePlannerDragEnd(event)}
       >
-      <section className='grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]'>
-        <div className='min-w-0 rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4'>
+      <section className='grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-stretch xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]'>
+        <div className='flex min-h-0 flex-col rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4 lg:min-h-[min(72vh,720px)]'>
           <div className='mb-4 flex flex-col gap-3'>
             <div className='min-w-0'>
               <h3 className='text-lg font-semibold text-gray-900'>
@@ -1521,6 +1521,7 @@ export default function ItineraryActivities({
               )}
             </div>
           ) : (
+            <div className='flex min-h-0 flex-1 flex-col'>
             <PlannerStretchTimeline
               tripId={tripId}
               dateKey={selectedDate}
@@ -1538,7 +1539,9 @@ export default function ItineraryActivities({
               onEditActivity={setEditingActivity}
               onReorderActivities={handleReorderActivities}
               showInsertDropZones={draggingSavedPlaceId != null}
+              stretchHeight
             />
+            </div>
           )}
 
           {prayerTimesError && showPrayerTimes && (
@@ -1554,8 +1557,8 @@ export default function ItineraryActivities({
         <aside
           className={`flex min-h-0 min-w-0 flex-col rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4 ${
             sortedLocations.length > 0
-              ? "max-h-[min(48vh,420px)] lg:max-h-[min(72vh,720px)] 2xl:max-h-[min(78vh,800px)]"
-              : ""
+              ? "max-h-[min(48vh,420px)] lg:max-h-none lg:h-full"
+              : "lg:h-full"
           }`}
         >
           <div className='mb-3 flex shrink-0 items-center justify-between gap-2'>

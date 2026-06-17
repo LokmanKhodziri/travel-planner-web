@@ -87,6 +87,7 @@ interface PlannerStretchTimelineProps {
   onEditActivity: (activity: ApiActivity) => void;
   onReorderActivities: (orderedActivityIds: string[]) => void;
   showInsertDropZones?: boolean;
+  stretchHeight?: boolean;
 }
 
 function parsePrayerDateTime(dateKey: string, time: string) {
@@ -624,6 +625,7 @@ export default function PlannerStretchTimeline({
   onEditActivity,
   onReorderActivities,
   showInsertDropZones = false,
+  stretchHeight = false,
 }: PlannerStretchTimelineProps) {
   const compact = useMediaQuery("(max-width: 1023px)");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -667,9 +669,19 @@ export default function PlannerStretchTimeline({
   return (
     <div
       ref={containerRef}
-      className='max-h-[min(72vh,720px)] overflow-x-hidden overflow-y-auto rounded-xl border border-gray-200 bg-white 2xl:max-h-[min(78vh,800px)]'
+      className={
+        stretchHeight
+          ? "flex min-h-0 max-h-[min(48vh,420px)] flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white lg:max-h-none"
+          : "max-h-[min(72vh,720px)] overflow-x-hidden overflow-y-auto rounded-xl border border-gray-200 bg-white 2xl:max-h-[min(78vh,800px)]"
+      }
     >
-      <div className='min-w-0'>
+      <div
+        className={
+          stretchHeight
+            ? "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto"
+            : "min-w-0"
+        }
+      >
         <div
           className='grid border-b border-gray-100 bg-gray-50/80 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500'
           style={{ gridTemplateColumns: gridColumns }}
@@ -775,7 +787,7 @@ export default function PlannerStretchTimeline({
         </SortableContext>
       </div>
 
-      <div className='flex flex-wrap gap-4 border-t border-gray-100 bg-gray-50 px-4 py-2 text-[11px] text-gray-500'>
+      <div className='flex shrink-0 flex-wrap gap-4 border-t border-gray-100 bg-gray-50 px-4 py-2 text-[11px] text-gray-500'>
         <span className='flex items-center gap-1.5'>
           <span className='h-3 w-3 rounded border border-gray-300 bg-white' />
           Activity
