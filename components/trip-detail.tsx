@@ -196,7 +196,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
   ).length;
 
   return (
-    <div className='container mx-auto min-w-0 max-w-full space-y-6 px-3 py-6 sm:space-y-8 sm:px-4 sm:py-8'>
+    <div className='page-shell-wide min-w-0 space-y-6 py-6 sm:space-y-8 sm:py-8'>
       {trip.imageUrl && (
         <div className='w-full h-72 md:h-96 overflow-hidden rounded-xl shadow-lg relative'>
           <Image
@@ -235,8 +235,8 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
 
       <div className='rounded-lg bg-white p-4 shadow sm:p-6'>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <div className='-mx-1 mb-4 touch-scroll-x overflow-x-auto px-1 pb-1 no-scrollbar sm:mb-6'>
-            <TabsList className='inline-flex h-auto min-w-max gap-1 p-1'>
+          <div className='-mx-1 mb-4 touch-scroll-x overflow-x-auto px-1 pb-1 no-scrollbar sm:mb-6 xl:overflow-visible xl:touch-auto'>
+            <TabsList className='inline-flex h-auto min-w-max gap-1 p-1 xl:flex xl:min-w-0 xl:flex-wrap'>
             <TabsTrigger
               value='overview'
               className='shrink-0 px-3 py-2 text-sm font-semibold whitespace-nowrap'
@@ -286,9 +286,11 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
           <TabsContent value='overview'>
             <div>
               <h2 className='text-xl font-semibold mb-4'>Overview</h2>
+              <div className='grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] xl:items-start'>
               <div>
+                <div className='grid gap-4 sm:grid-cols-2'>
                 <div className='flex items-start'>
-                  <Calendar className='h-6 w-6 mr-3 text-gray-500' />
+                  <Calendar className='h-6 w-6 mr-3 text-gray-500 shrink-0' />
                   <div className='text-gray-700'>
                     <p className='font-medium'>Dates</p>
                     <p className='text-sm text-gray-500'>
@@ -298,22 +300,26 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                     </p>
                   </div>
                 </div>
-                <div className='flex items-start mt-4'>
-                  <MapPin className='h-6 w-6 mr-3 text-gray-500' />
-                  <p>
-                    Destinations: {tripLocations.length} location
-                    {tripLocations.length !== 1 ? "s" : ""}
-                  </p>
+                <div className='flex items-start'>
+                  <MapPin className='h-6 w-6 mr-3 text-gray-500 shrink-0' />
+                  <div className='text-gray-700'>
+                    <p className='font-medium'>Destinations</p>
+                    <p className='text-sm text-gray-500'>
+                      {tripLocations.length} location
+                      {tripLocations.length !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                </div>
                 </div>
                 <p className='text-sm text-emerald-700 mt-4'>
                   Muslim-friendly features: prayer times, nearby mosques, and
                   Halal food.
                 </p>
-              </div>
-              <p className='text-gray-500 mt-4 leading-relaxed'>
+              <p className='text-gray-500 mt-4 leading-relaxed max-w-3xl'>
                 {trip.description}
               </p>
-              <div className='mt-6 rounded-xl border border-blue-100 bg-blue-50/40 p-4'>
+              </div>
+              <div className='rounded-xl border border-blue-100 bg-blue-50/40 p-4 xl:p-5'>
                 <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
                   <div>
                     <h3 className='text-lg font-semibold text-gray-900'>
@@ -334,7 +340,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                   </Button>
                 </div>
 
-                <div className='mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3'>
+                <div className='mt-4 grid gap-3 sm:grid-cols-2'>
                   {overviewDays.map((day) => {
                     const dayActivities = activitiesByDate[day.dateKey] ?? [];
                     const firstActivity = dayActivities[0];
@@ -390,6 +396,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                   })}
                 </div>
               </div>
+              </div>
             </div>
           </TabsContent>
           <TabsContent value='itinerary'>
@@ -423,7 +430,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
                       </Button>
                     </Link>
                   </div>
-                  <div className='mt-4'>
+                  <div className='content-well mt-4'>
                     <SortableItinerary
                       tripId={trip.id}
                       locations={tripLocations.map((loc) => ({
@@ -481,7 +488,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
             <NearbyPlacesPanel tripId={trip.id} hasLocations={hasLocations} />
           </TabsContent>
           <TabsContent value='map'>
-            <div className='h-72 md:h-96 lg:h-130 rounded-lg overflow-hidden'>
+            <div className='h-72 overflow-hidden rounded-lg md:h-96 lg:h-[28rem] 2xl:h-[32rem]'>
               <h2 className='text-xl font-semibold mb-4'>Map</h2>
               <Map
                 itineraries={tripLocations.map((loc, idx) => ({

@@ -66,7 +66,7 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-start gap-3 rounded-lg bg-white p-3 shadow sm:items-center sm:p-4 ${
+      className={`flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:items-center sm:p-4 ${
         isDragging ? "opacity-70" : ""
       } ${isConfirming ? "ring-2 ring-red-200" : ""}`}
     >
@@ -80,7 +80,7 @@ function SortableItem({
         <GripVertical className='h-5 w-5' />
       </button>
 
-      <h3 className='min-w-0 flex-1 break-words text-base font-semibold leading-snug sm:text-xl'>
+      <h3 className='min-w-0 flex-1 break-words text-base font-semibold leading-snug lg:text-lg'>
         {location.locationTitle}
       </h3>
 

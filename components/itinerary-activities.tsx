@@ -1338,7 +1338,7 @@ export default function ItineraryActivities({
           </div>
         </div>
 
-        <div className='mt-4 touch-scroll-x flex gap-2 overflow-x-auto pb-1'>
+        <div className='mt-4 flex flex-wrap gap-2 pb-1 xl:gap-3'>
           {plannerDays.map((day) => {
             const count = activitiesByDate[day.dateKey]?.length ?? 0;
             return (
@@ -1346,7 +1346,7 @@ export default function ItineraryActivities({
                 key={day.dateKey}
                 type='button'
                 onClick={() => handleSelectDate(day.dateKey)}
-                className={`min-w-28 rounded-xl border px-4 py-3 text-left transition ${
+                className={`min-w-28 flex-1 rounded-xl border px-4 py-3 text-left transition sm:min-w-32 sm:flex-none xl:min-w-[8.5rem] ${
                   selectedDate === day.dateKey
                     ? "border-blue-600 bg-blue-600 text-white shadow"
                     : "border-gray-200 bg-gray-50 text-gray-700 hover:border-blue-200 hover:bg-blue-50"
@@ -1411,7 +1411,7 @@ export default function ItineraryActivities({
         onDragStart={handlePlannerDragStart}
         onDragEnd={(event) => void handlePlannerDragEnd(event)}
       >
-      <section className='grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]'>
+      <section className='grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]'>
         <div className='min-w-0 rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4'>
           <div className='mb-4 flex flex-col gap-3'>
             <div className='min-w-0'>
@@ -1554,7 +1554,7 @@ export default function ItineraryActivities({
         <aside
           className={`flex min-h-0 min-w-0 flex-col rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4 ${
             sortedLocations.length > 0
-              ? "max-h-[min(48vh,420px)] lg:max-h-[min(72vh,720px)]"
+              ? "max-h-[min(48vh,420px)] lg:max-h-[min(72vh,720px)] 2xl:max-h-[min(78vh,800px)]"
               : ""
           }`}
         >
@@ -1626,7 +1626,7 @@ export default function ItineraryActivities({
 
       <form
         onSubmit={handleSubmit}
-        className='max-w-full min-w-0 space-y-4 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 p-3 sm:p-4'
+        className='content-well max-w-full min-w-0 space-y-4 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 p-3 sm:p-4 xl:max-w-4xl'
       >
         <h3 className='font-semibold text-gray-800'>
           Add activity to {selectedDay?.label ?? "selected day"}

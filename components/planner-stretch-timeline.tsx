@@ -646,7 +646,7 @@ export default function PlannerStretchTimeline({
     .map((item) => item.block.activity.id);
 
   return (
-    <div className='max-h-[min(72vh,720px)] overflow-x-hidden overflow-y-auto rounded-xl border border-gray-200 bg-white'>
+    <div className='max-h-[min(72vh,720px)] overflow-x-hidden overflow-y-auto rounded-xl border border-gray-200 bg-white 2xl:max-h-[min(78vh,800px)]'>
       <div
         className={
           compact ? "min-w-0" : showPrayerTimes ? "min-w-[680px]" : "min-w-[640px]"

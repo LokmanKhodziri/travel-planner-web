@@ -63,7 +63,7 @@ export default function Navbar({ session }: { session: ApiUser | null }) {
 
   return (
     <nav className='bg-white shadow-md py-4 border-b border-gray-200'>
-      <div className='container mx-auto px-6 lg:px-8'>
+      <div className='page-shell'>
         <div className='flex items-center justify-between gap-4'>
           <Link href={brandHref} className='flex items-center gap-3'>
             <Image src='/logo.png' alt='logo' width={50} height={50} />

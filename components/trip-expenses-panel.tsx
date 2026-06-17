@@ -145,7 +145,7 @@ export default function TripExpensesPanel({
         </p>
       </div>
 
-      <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-3'>
+      <div className='grid gap-4 sm:grid-cols-2 2xl:grid-cols-3'>
         {Object.entries(totalsByCurrency).map(([code, total]) => (
           <div
             key={code}
@@ -166,7 +166,7 @@ export default function TripExpensesPanel({
           </div>
         ))}
         {expenses.length === 0 && !loading && (
-          <div className='rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 sm:col-span-2 xl:col-span-3'>
+          <div className='rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 sm:col-span-2 2xl:col-span-3'>
             <p className='text-sm text-gray-500'>
               No expenses yet. Add your first travel cost below.
             </p>
@@ -198,9 +198,10 @@ export default function TripExpensesPanel({
         </div>
       )}
 
+      <div className='grid gap-6 xl:grid-cols-[minmax(0,28rem)_minmax(0,1fr)] xl:items-start'>
       <form
         onSubmit={handleSubmit}
-        className='rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4'
+        className='rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4 xl:sticky xl:top-4'
       >
         <h3 className='font-semibold text-gray-900'>Add expense</h3>
         <div className='grid gap-4 md:grid-cols-2'>
@@ -281,7 +282,7 @@ export default function TripExpensesPanel({
         </Button>
       </form>
 
-      <div className='rounded-xl border border-gray-200 bg-white'>
+      <div className='rounded-xl border border-gray-200 bg-white min-w-0'>
         <div className='border-b border-gray-100 px-4 py-3'>
           <h3 className='font-semibold text-gray-900'>All expenses</h3>
         </div>
@@ -345,6 +346,7 @@ export default function TripExpensesPanel({
             })}
           </ul>
         )}
+      </div>
       </div>
     </div>
   );
