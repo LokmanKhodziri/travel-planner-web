@@ -123,6 +123,34 @@ export default function TripBudgetCard({
   const categoryBudgets = parseCategoryBudgets(budget?.categoryBudgets);
   const allocatedCategories = sumCategoryBudgets(categoryBudgets);
 
+  const editingAllocation = useMemo(() => {
+    const allocated =
+      Math.round(
+        Object.values(categoryAmounts).reduce((sum, value) => {
+          const amount = Number(value);
+          return Number.isFinite(amount) && amount > 0 ? sum + amount : sum;
+        }, 0) * 100,
+      ) / 100;
+
+    const total = totalAmount.trim() ? Number(totalAmount) : null;
+    const hasValidTotal =
+      total != null && Number.isFinite(total) && total > 0;
+
+    if (!hasValidTotal && allocated <= 0) return null;
+
+    if (!hasValidTotal) {
+      return { total: null as number | null, allocated, remaining: null, over: false };
+    }
+
+    const remaining = total - allocated;
+    return {
+      total,
+      allocated,
+      remaining,
+      over: remaining < 0,
+    };
+  }, [totalAmount, categoryAmounts]);
+
   function resetFormFromBudget(saved: ApiTripBudget | null) {
     if (!saved) {
       setCurrency("MYR");
@@ -326,6 +354,45 @@ export default function TripBudgetCard({
                   </label>
                 ))}
               </div>
+
+              {editingAllocation && (
+                <div
+                  className={`rounded-lg border px-3 py-2.5 text-sm ${
+                    editingAllocation.over
+                      ? "border-red-200 bg-red-50"
+                      : "border-emerald-200 bg-white/80"
+                  }`}
+                >
+                  <div className='flex items-center justify-between gap-3'>
+                    <span className='text-gray-600'>Allocated in categories</span>
+                    <span className='font-medium text-gray-900'>
+                      {formatMoney(editingAllocation.allocated, currency)}
+                    </span>
+                  </div>
+                  {editingAllocation.total != null && (
+                    <div className='mt-1.5 flex items-center justify-between gap-3 border-t border-dashed border-gray-200 pt-1.5'>
+                      <span className='font-medium text-gray-800'>Left to allocate</span>
+                      <span
+                        className={`font-semibold ${
+                          editingAllocation.over ? "text-red-600" : "text-emerald-700"
+                        }`}
+                      >
+                        {editingAllocation.over
+                          ? `${formatMoney(
+                              Math.abs(editingAllocation.remaining ?? 0),
+                              currency,
+                            )} over`
+                          : formatMoney(editingAllocation.remaining ?? 0, currency)}
+                      </span>
+                    </div>
+                  )}
+                  {editingAllocation.total == null && editingAllocation.allocated > 0 && (
+                    <p className='mt-1.5 text-xs text-gray-500'>
+                      Add a total budget to see how much is left unallocated.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {error && <p className='text-sm text-red-600'>{error}</p>}
 
