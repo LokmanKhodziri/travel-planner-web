@@ -1,0 +1,98 @@
+import Link from "next/link";
+import { MapPin, Plus, Sparkles } from "lucide-react";
+import { Button } from "./ui/button";
+
+interface PlannerGettingStartedProps {
+  tripId: string;
+  hasLocations: boolean;
+  onAddActivity: () => void;
+  onBrowseDiscover?: () => void;
+}
+
+export default function PlannerGettingStarted({
+  tripId,
+  hasLocations,
+  onAddActivity,
+  onBrowseDiscover,
+}: PlannerGettingStartedProps) {
+  return (
+    <div>
+      <h3 className='text-base font-semibold text-gray-900 sm:text-lg'>
+        Start planning your trip
+      </h3>
+      <p className='mt-1 text-sm text-gray-600'>
+        Follow these steps to build your first day. You can hide this once you add
+        an activity.
+      </p>
+
+      <ol className='mt-4 space-y-3'>
+        <li className='flex items-start gap-3 rounded-lg border border-blue-100 bg-white p-3'>
+          <span className='flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white'>
+            1
+          </span>
+          <div className='min-w-0 flex-1'>
+            <p className='font-medium text-gray-900'>Add trip destinations</p>
+            <p className='mt-0.5 text-sm text-gray-500'>
+              Saved places power recommendations and prayer times.
+            </p>
+            {!hasLocations && (
+              <Button asChild size='sm' variant='outline' className='mt-2 gap-2'>
+                <Link href={`/trips/${tripId}?tab=itinerary`}>
+                  <MapPin className='h-4 w-4' />
+                  Add destinations
+                </Link>
+              </Button>
+            )}
+            {hasLocations && (
+              <p className='mt-2 text-xs font-medium text-emerald-700'>
+                Destinations added — you&apos;re ready for step 2.
+              </p>
+            )}
+          </div>
+        </li>
+
+        <li className='flex items-start gap-3 rounded-lg border border-blue-100 bg-white p-3'>
+          <span className='flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white'>
+            2
+          </span>
+          <div>
+            <p className='font-medium text-gray-900'>Pick a day</p>
+            <p className='mt-0.5 text-sm text-gray-500'>
+              Use the day tabs above to choose which day you&apos;re planning.
+            </p>
+          </div>
+        </li>
+
+        <li className='flex items-start gap-3 rounded-lg border border-blue-100 bg-white p-3'>
+          <span className='flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white'>
+            3
+          </span>
+          <div className='min-w-0 flex-1'>
+            <p className='font-medium text-gray-900'>Add your first activity</p>
+            <p className='mt-0.5 text-sm text-gray-500'>
+              Add manually or browse ideas in the Discover tab.
+            </p>
+            <div className='mt-2 flex flex-wrap gap-2'>
+              <Button size='sm' className='gap-2' onClick={onAddActivity}>
+                <Plus className='h-4 w-4' />
+                Add activity
+              </Button>
+              {hasLocations && onBrowseDiscover && (
+                <Button
+                  size='sm'
+                  variant='outline'
+                  className='gap-2'
+                  onClick={onBrowseDiscover}
+                >
+                  <Sparkles className='h-4 w-4' />
+                  Browse Discover
+                </Button>
+              )}
+            </div>
+          </div>
+        </li>
+      </ol>
+    </div>
+  );
+
+}

@@ -449,7 +449,8 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
               )}
             </div>
           </TabsContent>
-          <TabsContent value='activities'>
+          <TabsContent value='activities' className='mt-0'>
+            <div className='-mx-3 sm:-mx-4 md:-mx-6'>
             <ItineraryActivities
               tripId={trip.id}
               startDate={trip.startDate.toISOString()}
@@ -464,6 +465,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
               hasLocations={hasLocations}
               onLocationAdded={handleLocationAdded}
             />
+            </div>
           </TabsContent>
           <TabsContent value='expenses'>
             <TripExpensesPanel
