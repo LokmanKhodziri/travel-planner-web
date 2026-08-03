@@ -74,7 +74,7 @@ export default function Navbar({ session }: { session: ApiUser | null }) {
                   : "text-gray-800"
               }`}
             >
-              Travel Planner
+              Musafir-Go
             </span>
           </Link>
 

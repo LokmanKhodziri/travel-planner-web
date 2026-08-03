@@ -1,13 +1,13 @@
-# Travel Planner Web
+# Musafir-Go Web
 
-Next.js frontend for the **Muslim-Friendly Travel Planner**. Connects to the [Travel Planner API](../travel-planner-api) for auth, trips, planning, expenses, prayer times, and nearby places.
+Next.js frontend for **Musafir-Go**, a Muslim-friendly travel planner. Connects to the [Musafir-Go API](../travel-planner-api) for auth, trips, planning, expenses, prayer times, and nearby places.
 
 **Stack:** Next.js 16 · React 19 · Tailwind CSS 4 · Radix UI · Google Maps · UploadThing
 
 ## Prerequisites
 
 - Node.js **≥ 20**
-- Running [Travel Planner API](../travel-planner-api) (default `http://localhost:4000`)
+- Running [Musafir-Go API](../travel-planner-api) (default `http://localhost:4000`)
 
 ## Setup
 
@@ -133,7 +133,7 @@ All backend calls go through `lib/api.ts` (`api.getTrips()`, `api.createActivity
 
 ## Related repos
 
-- **Backend:** [../travel-planner-api](../travel-planner-api) — Express + Prisma API
+- **Backend:** [../travel-planner-api](../travel-planner-api) — Musafir-Go Express + Prisma API
 - **Plan:** [../PROJECT_PLAN.md](../PROJECT_PLAN.md) — development timeline
 
 ## Local development (both repos)

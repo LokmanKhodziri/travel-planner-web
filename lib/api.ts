@@ -84,6 +84,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  deleteTrip: (id: string) =>
+    fetchApi<{ success: boolean }>(`/api/trips/${id}`, {
+      method: "DELETE",
+    }),
   getLocations: () => fetchApi<TransformedLocation[]>("/api/locations"),
   addLocation: (
     tripId: string,

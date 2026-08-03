@@ -257,7 +257,7 @@ export default async function AdminPage() {
     <main className="mx-auto max-w-7xl px-6 py-10">
       <div className="mb-8">
         <p className="text-sm font-medium text-blue-600">Admin Panel</p>
-        <h1 className="mt-1 text-3xl font-bold text-gray-900">Travel Planner Dashboard</h1>
+        <h1 className="mt-1 text-3xl font-bold text-gray-900">Musafir-Go Dashboard</h1>
         <p className="mt-2 text-gray-600">
           Monitor users, trips, locations, sessions, and itinerary activity across the platform.
         </p>

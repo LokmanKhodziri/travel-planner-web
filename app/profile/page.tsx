@@ -48,7 +48,7 @@ export default async function ProfilePage() {
               image={user.image}
             />
             <h2 className='mt-4 text-xl font-semibold text-gray-900'>
-              {user.name ?? "Travel Planner"}
+              {user.name ?? "Musafir-Go"}
             </h2>
             <p className='mt-1 text-sm text-gray-500'>{user.email}</p>
             <span

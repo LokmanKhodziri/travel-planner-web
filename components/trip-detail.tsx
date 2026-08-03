@@ -14,6 +14,7 @@ import PrayerTimesPanel from "./prayer-times-panel";
 import NearbyPlacesPanel from "./nearby-places-panel";
 import ItineraryActivities from "./itinerary-activities";
 import TripExpensesPanel from "./trip-expenses-panel";
+import DeleteTripButton from "./delete-trip-button";
 import { formatDate } from "@/lib/utils";
 import { api } from "@/lib/api";
 import {
@@ -220,16 +221,17 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
             </span>
           </div>
         </div>
-        <div className='flex justify-center md:justify-end'>
+        <div className='flex flex-col items-stretch justify-center gap-2 sm:flex-row sm:items-center md:justify-end'>
           <Link
             href={`/trips/${trip.id}/itinerary/new`}
             className='text-blue-600 hover:underline'
           >
-            <Button>
+            <Button className='w-full sm:w-auto'>
               <Plus className='w-6 h-6 mr-2' />
               Add Location
             </Button>
           </Link>
+          <DeleteTripButton tripId={trip.id} tripTitle={trip.title} />
         </div>
       </div>
 
