@@ -92,20 +92,20 @@ export default async function LandingPage() {
         <div className='pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.12),_transparent_45%),radial-gradient(circle_at_bottom_left,_rgba(16,185,129,0.12),_transparent_40%)]' />
         <div className='container relative mx-auto grid gap-12 px-4 py-16 md:grid-cols-[1.1fr_0.9fr] md:items-center md:py-24 lg:px-8'>
           <div className='space-y-8'>
-            <span className='inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-4 py-1.5 text-sm font-medium text-emerald-800'>
+            <p className='text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700'>
               Muslim-friendly travel planning
-            </span>
+            </p>
             <div className='space-y-4'>
-              <h1 className='text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl lg:text-6xl'>
-                Plan trips day by day,{" "}
-                <span className='bg-gradient-to-r from-blue-600 to-emerald-600 bg-clip-text text-transparent'>
-                  without the stress
-                </span>
+              <h1 className='text-5xl font-bold tracking-tight text-gray-900 sm:text-6xl lg:text-7xl'>
+                Musafir-Go
               </h1>
+              <p className='max-w-xl text-xl font-medium text-gray-800 sm:text-2xl'>
+                Plan trips day by day, without the stress.
+              </p>
               <p className='max-w-xl text-lg text-gray-600'>
-                Travel Planner helps you organize locations, activities,
-                recommendations, prayer times, and nearby Halal options in one
-                place — like a Wanderlog-style itinerary built for your needs.
+                Organize locations, activities, recommendations, prayer times,
+                and nearby Halal options in one place — built for Muslim
+                travelers.
               </p>
             </div>
             <div className='flex flex-col gap-3 sm:flex-row'>
@@ -339,7 +339,7 @@ export default async function LandingPage() {
       </section>
 
       <footer className='border-t border-gray-100 py-8 text-center text-sm text-gray-500'>
-        <p>Travel Planner — plan smarter, travel better.</p>
+        <p>Musafir-Go — plan smarter, travel better.</p>
       </footer>
     </main>
   );

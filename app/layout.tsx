@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Travel Planner",
-  description: "Plan and visualize your trips",
+  title: "Musafir-Go",
+  description: "Muslim-friendly travel planning — itineraries, prayer times, and Halal nearby",
 };
 
 export default async function RootLayout({

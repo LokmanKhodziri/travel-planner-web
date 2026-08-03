@@ -1,6 +1,6 @@
 import type { TravelMode } from "@/types/api";
 
-export const TRAVEL_MODE_STORAGE_KEY = "travel-planner-travel-mode";
+export const TRAVEL_MODE_STORAGE_KEY = "musafir-go-travel-mode";
 
 export const TRAVEL_MODE_OPTIONS: {
   value: TravelMode;
