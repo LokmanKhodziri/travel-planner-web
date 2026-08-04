@@ -17,7 +17,12 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Musafir-Go",
-  description: "Muslim-friendly travel planning — itineraries, prayer times, and Halal nearby",
+  description:
+    "Muslim-friendly travel planning — itineraries, prayer times, and Halal nearby",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default async function RootLayout({

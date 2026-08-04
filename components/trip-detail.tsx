@@ -16,6 +16,7 @@ import ItineraryActivities from "./itinerary-activities";
 import TripExpensesPanel from "./trip-expenses-panel";
 import DeleteTripButton from "./delete-trip-button";
 import { formatDate } from "@/lib/utils";
+import { isGoogleStaticMapUrl } from "@/lib/trip-image";
 import { api } from "@/lib/api";
 import {
   activityPrimaryDateKey,
@@ -206,6 +207,7 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
             className='object-cover'
             fill
             priority
+            unoptimized={isGoogleStaticMapUrl(trip.imageUrl)}
           />
         </div>
       )}
