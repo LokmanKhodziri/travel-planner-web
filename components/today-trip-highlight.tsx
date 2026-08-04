@@ -6,6 +6,7 @@ import {
   getTripDayNumber,
   localDateKey,
 } from "@/lib/trip-dates";
+import { isGoogleStaticMapUrl } from "@/lib/trip-image";
 import {
   ArrowRight,
   CalendarDays,
@@ -203,6 +204,7 @@ export default function TodayTripHighlight({
                 src={trip.imageUrl}
                 alt={trip.title}
                 fill
+                unoptimized={isGoogleStaticMapUrl(trip.imageUrl)}
                 className='object-cover'
               />
             ) : (

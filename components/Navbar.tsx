@@ -66,7 +66,14 @@ export default function Navbar({ session }: { session: ApiUser | null }) {
       <div className='page-shell'>
         <div className='flex items-center justify-between gap-4'>
           <Link href={brandHref} className='flex items-center gap-3'>
-            <Image src='/logo.png' alt='logo' width={50} height={50} />
+            <Image
+              src='/logo.png'
+              alt='Musafir-Go logo'
+              width={48}
+              height={48}
+              priority
+              className='h-10 w-10 rounded-full object-cover shadow-sm ring-1 ring-black/10 md:h-12 md:w-12'
+            />
             <span
               className={`text-xl font-bold md:text-2xl ${
                 pathname === "/dashboard"

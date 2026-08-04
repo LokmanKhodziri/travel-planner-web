@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { getSession } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
@@ -96,9 +97,19 @@ export default async function LandingPage() {
               Muslim-friendly travel planning
             </p>
             <div className='space-y-4'>
-              <h1 className='text-5xl font-bold tracking-tight text-gray-900 sm:text-6xl lg:text-7xl'>
-                Musafir-Go
-              </h1>
+              <div className='flex items-center gap-4'>
+                <Image
+                  src='/logo.png'
+                  alt='Musafir-Go logo'
+                  width={88}
+                  height={88}
+                  priority
+                  className='h-16 w-16 rounded-full object-cover shadow-md ring-1 ring-black/10 sm:h-20 sm:w-20'
+                />
+                <h1 className='text-5xl font-bold tracking-tight text-gray-900 sm:text-6xl lg:text-7xl'>
+                  Musafir-Go
+                </h1>
+              </div>
               <p className='max-w-xl text-xl font-medium text-gray-800 sm:text-2xl'>
                 Plan trips day by day, without the stress.
               </p>

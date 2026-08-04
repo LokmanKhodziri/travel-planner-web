@@ -15,6 +15,7 @@ import {
   MapIcon,
   PlusIcon,
 } from "lucide-react";
+import { isGoogleStaticMapUrl } from "@/lib/trip-image";
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -218,6 +219,7 @@ export default async function DashboardPage() {
                         src={trip.imageUrl}
                         alt={trip.title}
                         fill
+                        unoptimized={isGoogleStaticMapUrl(trip.imageUrl)}
                         className='rounded-t-lg object-cover'
                       />
                     ) : (

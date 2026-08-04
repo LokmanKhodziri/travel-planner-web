@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { UploadButton } from "@/lib/uploadthing";
+import { isGoogleStaticMapUrl } from "@/lib/trip-image";
 import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -233,6 +234,7 @@ export default function NewTripsPage() {
                   className="w-full mb-4 rounded-md max-h-48 object-cover"
                   width={300}
                   height={100}
+                  unoptimized={isGoogleStaticMapUrl(previewImageUrl)}
                 />
               )}
               {!imageUrl && autoLocationImageUrl && (
