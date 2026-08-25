@@ -6,7 +6,7 @@ import {
   getTripDayNumber,
   localDateKey,
 } from "@/lib/trip-dates";
-import { isGoogleStaticMapUrl } from "@/lib/trip-image";
+import { isTripMapImageUrl, resolveTripImageSrc } from "@/lib/trip-image";
 import {
   ArrowRight,
   CalendarDays,
@@ -76,6 +76,7 @@ export default function TodayTripHighlight({
     ? getNextPrayer(prayerTimes.timings, now)
     : null;
   const previewActivities = todayActivities.slice(0, 4);
+  const imageSrc = resolveTripImageSrc(trip.imageUrl);
 
   return (
     <section className='overflow-hidden rounded-2xl border-2 border-blue-200 bg-gradient-to-br from-blue-50 via-white to-emerald-50 shadow-sm'>
@@ -199,12 +200,12 @@ export default function TodayTripHighlight({
 
         <div className='border-t border-blue-100 bg-white/60 p-6 lg:border-l lg:border-t-0 lg:p-8'>
           <div className='relative mb-4 h-40 overflow-hidden rounded-xl border border-gray-200'>
-            {trip.imageUrl ? (
+            {imageSrc ? (
               <Image
-                src={trip.imageUrl}
+                src={imageSrc}
                 alt={trip.title}
                 fill
-                unoptimized={isGoogleStaticMapUrl(trip.imageUrl)}
+                unoptimized={isTripMapImageUrl(imageSrc)}
                 className='object-cover'
               />
             ) : (

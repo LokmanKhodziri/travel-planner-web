@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import DeleteTripButton from "@/components/delete-trip-button";
 import type { ApiTrip } from "@/types/api";
 import { getTotalTripDays, getTripDayNumber } from "@/lib/trip-dates";
-import { isGoogleStaticMapUrl } from "@/lib/trip-image";
+import { isTripMapImageUrl, resolveTripImageSrc } from "@/lib/trip-image";
 import { ArrowRight, CalendarIcon, Sparkles } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -20,6 +20,7 @@ export default function TripListCard({
   const dayNumber = getTripDayNumber(trip.startDate, today);
   const totalDays = getTotalTripDays(trip.startDate, trip.endDate);
   const isActive = variant === "active";
+  const imageSrc = resolveTripImageSrc(trip.imageUrl);
 
   return (
     <div className='group relative h-full'>
@@ -34,12 +35,12 @@ export default function TripListCard({
           }`}
         >
           <div className='relative h-40 w-full'>
-            {trip.imageUrl ? (
+            {imageSrc ? (
               <Image
-                src={trip.imageUrl}
+                src={imageSrc}
                 alt={trip.title}
                 fill
-                unoptimized={isGoogleStaticMapUrl(trip.imageUrl)}
+                unoptimized={isTripMapImageUrl(imageSrc)}
                 className='object-cover'
               />
             ) : (

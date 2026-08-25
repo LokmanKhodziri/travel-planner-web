@@ -15,7 +15,7 @@ import {
   MapIcon,
   PlusIcon,
 } from "lucide-react";
-import { isGoogleStaticMapUrl } from "@/lib/trip-image";
+import { isTripMapImageUrl, resolveTripImageSrc } from "@/lib/trip-image";
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -210,16 +210,18 @@ export default async function DashboardPage() {
           </Card>
         ) : (
           <div className='grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3'>
-            {recentTrips.map((trip) => (
+            {recentTrips.map((trip) => {
+              const imageSrc = resolveTripImageSrc(trip.imageUrl);
+              return (
               <Link href={`/trips/${trip.id}`} key={trip.id}>
                 <Card className='flex h-full flex-col transition-colors duration-200 hover:border-blue-500'>
                   <div className='relative h-40 w-full'>
-                    {trip.imageUrl ? (
+                    {imageSrc ? (
                       <Image
-                        src={trip.imageUrl}
+                        src={imageSrc}
                         alt={trip.title}
                         fill
-                        unoptimized={isGoogleStaticMapUrl(trip.imageUrl)}
+                        unoptimized={isTripMapImageUrl(imageSrc)}
                         className='rounded-t-lg object-cover'
                       />
                     ) : (
@@ -247,7 +249,8 @@ export default async function DashboardPage() {
                   </CardContent>
                 </Card>
               </Link>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

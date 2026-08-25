@@ -16,7 +16,7 @@ import ItineraryActivities from "./itinerary-activities";
 import TripExpensesPanel from "./trip-expenses-panel";
 import DeleteTripButton from "./delete-trip-button";
 import { formatDate } from "@/lib/utils";
-import { isGoogleStaticMapUrl } from "@/lib/trip-image";
+import { isTripMapImageUrl, resolveTripImageSrc } from "@/lib/trip-image";
 import { api } from "@/lib/api";
 import {
   activityPrimaryDateKey,
@@ -196,18 +196,19 @@ export default function TripDetailClient({ trip }: TripDetailClientProps) {
   const plannedDayCount = overviewDays.filter(
     (day) => (activitiesByDate[day.dateKey]?.length ?? 0) > 0,
   ).length;
+  const heroImageSrc = resolveTripImageSrc(trip.imageUrl);
 
   return (
     <div className='page-shell-wide min-w-0 space-y-6 py-6 sm:space-y-8 sm:py-8'>
-      {trip.imageUrl && (
+      {heroImageSrc && (
         <div className='w-full h-72 md:h-96 overflow-hidden rounded-xl shadow-lg relative'>
           <Image
-            src={trip.imageUrl}
+            src={heroImageSrc}
             alt={trip.title}
             className='object-cover'
             fill
             priority
-            unoptimized={isGoogleStaticMapUrl(trip.imageUrl)}
+            unoptimized={isTripMapImageUrl(heroImageSrc)}
           />
         </div>
       )}

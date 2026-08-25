@@ -5,7 +5,10 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { UploadButton } from "@/lib/uploadthing";
-import { isGoogleStaticMapUrl } from "@/lib/trip-image";
+import {
+  buildLocationImageUrl,
+  isTripMapImageUrl,
+} from "@/lib/trip-image";
 import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -14,6 +17,7 @@ export default function NewTripsPage() {
   const router = useRouter();
   const [isPending, setIsPending] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [previewFailed, setPreviewFailed] = useState(false);
   const [initialLocation, setInitialLocation] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -142,7 +146,10 @@ export default function NewTripsPage() {
                 type="text"
                 name="initialLocation"
                 value={initialLocation}
-                onChange={(e) => setInitialLocation(e.target.value)}
+                onChange={(e) => {
+                  setInitialLocation(e.target.value);
+                  setPreviewFailed(false);
+                }}
                 placeholder="e.g. Tokyo Tower, Japan"
                 className={cn(
                   "w-full border border-gray-300 px-3 py-2",
@@ -227,17 +234,24 @@ export default function NewTripsPage() {
             </div>
             <div>
               <label>Trip Image</label>
-              {previewImageUrl && (
+              {previewImageUrl && !previewFailed && (
                 <Image
                   src={previewImageUrl}
                   alt="Trip Preview"
                   className="w-full mb-4 rounded-md max-h-48 object-cover"
                   width={300}
                   height={100}
-                  unoptimized={isGoogleStaticMapUrl(previewImageUrl)}
+                  unoptimized={isTripMapImageUrl(previewImageUrl)}
+                  onError={() => setPreviewFailed(true)}
                 />
               )}
-              {!imageUrl && autoLocationImageUrl && (
+              {previewImageUrl && previewFailed && (
+                <div className="mb-4 flex h-32 w-full items-center justify-center rounded-md border border-dashed border-gray-300 bg-gray-50 px-4 text-center text-sm text-gray-500">
+                  Map preview unavailable. You can still create the trip or
+                  upload a custom image.
+                </div>
+              )}
+              {!imageUrl && autoLocationImageUrl && !previewFailed && (
                 <p className="mb-3 text-xs text-gray-500">
                   Auto image generated from your initial location. Upload a
                   custom image to replace it.
@@ -246,7 +260,10 @@ export default function NewTripsPage() {
               <UploadButton
                 endpoint="imageUploader"
                 onClientUploadComplete={(res) => {
-                  if (res?.[0]?.ufsUrl) setImageUrl(res[0].ufsUrl);
+                  if (res?.[0]?.ufsUrl) {
+                    setImageUrl(res[0].ufsUrl);
+                    setPreviewFailed(false);
+                  }
                 }}
                 onUploadError={(error) => console.error("Upload Error:", error)}
               />
@@ -260,25 +277,6 @@ export default function NewTripsPage() {
       </Card>
     </div>
   );
-}
-
-function buildLocationImageUrl(location: string) {
-  const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-  const trimmedLocation = location.trim();
-
-  if (!key || !trimmedLocation) return null;
-
-  const params = new URLSearchParams({
-    center: trimmedLocation,
-    zoom: "12",
-    size: "900x420",
-    scale: "2",
-    maptype: "roadmap",
-    markers: `color:red|${trimmedLocation}`,
-    key,
-  });
-
-  return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
 }
 
 function parseDateInput(value: string) {
