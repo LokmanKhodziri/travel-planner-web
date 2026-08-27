@@ -89,6 +89,10 @@ interface AdminSettings {
   accessTokenMinutes: number;
   refreshTokenDays: number;
   adminEmails: string[];
+  rateLimits?: {
+    placesLookupPerMinute: number;
+    placesSearchPerMinute: number;
+  };
   apiUrl: string;
   frontendUrl: string;
   oauth: {
@@ -412,6 +416,15 @@ export default async function AdminPage() {
                   {settings.refreshTokenDays ?? 7} days
                 </p>
               </div>
+              {settings.rateLimits ? (
+                <div className="rounded-lg bg-gray-50 p-4">
+                  <p className="text-sm text-gray-500">Places rate limits</p>
+                  <p className="mt-1 font-medium text-gray-900">
+                    {settings.rateLimits.placesLookupPerMinute}/min nearby ·{" "}
+                    {settings.rateLimits.placesSearchPerMinute}/min search
+                  </p>
+                </div>
+              ) : null}
               <div className="rounded-lg bg-gray-50 p-4">
                 <p className="text-sm text-gray-500">Admin emails</p>
                 <p className="mt-1 break-all font-medium text-gray-900">{settings.adminEmails.join(", ")}</p>
