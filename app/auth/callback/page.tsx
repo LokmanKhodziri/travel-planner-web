@@ -2,20 +2,29 @@
 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { storeAuthTokens } from "@/lib/auth-tokens";
 
-const JWT_COOKIE = "jwt";
+function readCallbackTokens(searchParams: URLSearchParams) {
+  const hashParams = new URLSearchParams(
+    typeof window !== "undefined" ? window.location.hash.replace(/^#/, "") : "",
+  );
+  return {
+    token: hashParams.get("token") ?? searchParams.get("token"),
+    refresh: hashParams.get("refresh") ?? searchParams.get("refresh"),
+  };
+}
 
 export default function AuthCallbackPage() {
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<"loading" | "done" | "error">("loading");
 
   useEffect(() => {
-    const token = searchParams.get("token");
+    const { token, refresh } = readCallbackTokens(searchParams);
     if (!token) {
       setStatus("error");
       return;
     }
-    document.cookie = `${JWT_COOKIE}=${encodeURIComponent(token)}; path=/; max-age=${60 * 60 * 24 * 7}`;
+    storeAuthTokens(token, refresh);
     setStatus("done");
     window.location.href = "/dashboard";
   }, [searchParams]);

@@ -14,16 +14,19 @@ import type {
   ExpenseCategory,
   TravelMode,
 } from "@/types/api";
+import {
+  ACCESS_COOKIE,
+  clearAuthTokens,
+  getAccessToken,
+  getRefreshToken,
+  storeAuthTokens,
+} from "@/lib/auth-tokens";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-const JWT_COOKIE = "jwt";
+const JWT_COOKIE = ACCESS_COOKIE;
 
 function getToken(): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(
-    new RegExp(`(?:^| )${JWT_COOKIE}=([^;]+)`),
-  );
-  return match ? decodeURIComponent(match[1]) : null;
+  return getAccessToken();
 }
 
 function authHeaders(): HeadersInit {
@@ -31,11 +34,44 @@ function authHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-export async function fetchApi<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return false;
+
+  const res = await fetch(`${API_URL}/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ refreshToken }),
+  });
+  if (!res.ok) {
+    clearAuthTokens();
+    return false;
+  }
+
+  const data = (await res.json()) as { token?: string; refreshToken?: string };
+  if (!data.token || !data.refreshToken) {
+    clearAuthTokens();
+    return false;
+  }
+
+  storeAuthTokens(data.token, data.refreshToken);
+  return true;
+}
+
+function queueRefresh(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = refreshAccessToken().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+}
+
+async function requestApi(path: string, options: RequestInit = {}): Promise<Response> {
+  return fetch(`${API_URL}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -44,6 +80,21 @@ export async function fetchApi<T>(
     },
     credentials: "include",
   });
+}
+
+export async function fetchApi<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  let res = await requestApi(path, options);
+
+  if (res.status === 401 && path !== "/auth/refresh") {
+    const refreshed = await queueRefresh();
+    if (refreshed) {
+      res = await requestApi(path, options);
+    }
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error((err as { error?: string }).error ?? "Request failed");

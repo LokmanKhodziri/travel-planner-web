@@ -86,6 +86,8 @@ interface AdminPlacesResponse {
 
 interface AdminSettings {
   sessionTimeoutMinutes: number;
+  accessTokenMinutes: number;
+  refreshTokenDays: number;
   adminEmails: string[];
   apiUrl: string;
   frontendUrl: string;
@@ -399,8 +401,16 @@ export default async function AdminPage() {
                 <p className="mt-1 break-all font-medium text-gray-900">{settings.frontendUrl}</p>
               </div>
               <div className="rounded-lg bg-gray-50 p-4">
-                <p className="text-sm text-gray-500">Session timeout</p>
-                <p className="mt-1 font-medium text-gray-900">{settings.sessionTimeoutMinutes} minutes</p>
+                <p className="text-sm text-gray-500">Access token</p>
+                <p className="mt-1 font-medium text-gray-900">
+                  {settings.accessTokenMinutes ?? settings.sessionTimeoutMinutes} minutes
+                </p>
+              </div>
+              <div className="rounded-lg bg-gray-50 p-4">
+                <p className="text-sm text-gray-500">Refresh token</p>
+                <p className="mt-1 font-medium text-gray-900">
+                  {settings.refreshTokenDays ?? 7} days
+                </p>
               </div>
               <div className="rounded-lg bg-gray-50 p-4">
                 <p className="text-sm text-gray-500">Admin emails</p>

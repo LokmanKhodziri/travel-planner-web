@@ -1,14 +1,12 @@
 "use client";
 
 import { logout } from "@/lib/auth-actions";
-import { getToken } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { ApiUser } from "@/types/api";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export default function Navbar({ session }: { session: ApiUser | null }) {
   const [isClient, setIsClient] = useState(false);
@@ -17,17 +15,7 @@ export default function Navbar({ session }: { session: ApiUser | null }) {
 
   const checkSession = useCallback(async () => {
     try {
-      const token = getToken();
-      const res = await fetch(`${API_URL}/api/auth/me`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        credentials: "include",
-        cache: "no-store",
-      });
-      if (!res.ok) {
-        setSessionState(null);
-        return;
-      }
-      const user = (await res.json()) as ApiUser;
+      const user = await api.getMe();
       setSessionState(user);
     } catch {
       setSessionState(null);

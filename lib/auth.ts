@@ -1,8 +1,9 @@
 import { cookies } from "next/headers";
 import type { ApiUser } from "@/types/api";
+import { ACCESS_COOKIE } from "@/lib/auth-tokens";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-const JWT_COOKIE = "jwt";
+const JWT_COOKIE = ACCESS_COOKIE;
 
 /** Get current user from backend using cookie (use in Server Components / API routes). */
 export async function getSession(): Promise<ApiUser | null> {

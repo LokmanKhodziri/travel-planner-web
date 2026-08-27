@@ -1,18 +1,16 @@
 "use client";
 
+import { clearAuthTokens, getRefreshToken, storeAuthTokens } from "@/lib/auth-tokens";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-const JWT_COOKIE = "jwt";
 
 interface EmailAuthResponse {
   token: string;
+  refreshToken: string;
 }
 
 export function getLoginUrl(provider: "google" | "github"): string {
   return `${API_URL}/auth/${provider}`;
-}
-
-function storeToken(token: string) {
-  document.cookie = `${JWT_COOKIE}=${encodeURIComponent(token)}; path=/; max-age=${60 * 60 * 24 * 7}`;
 }
 
 async function emailAuth(
@@ -31,7 +29,8 @@ async function emailAuth(
     throw new Error(data?.error ?? "Authentication failed");
   }
 
-  storeToken((data as EmailAuthResponse).token);
+  const auth = data as EmailAuthResponse;
+  storeAuthTokens(auth.token, auth.refreshToken);
 }
 
 export async function signInWithEmail(email: string, password: string) {
@@ -53,7 +52,13 @@ export function loginWithGitHub() {
 }
 
 export async function logout() {
-  await fetch(`${API_URL}/auth/logout`, { method: "POST", credentials: "include" });
-  document.cookie = `${JWT_COOKIE}=; path=/; max-age=0`;
+  const refreshToken = getRefreshToken();
+  await fetch(`${API_URL}/auth/logout`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ refreshToken }),
+  });
+  clearAuthTokens();
   window.location.href = "/";
 }
